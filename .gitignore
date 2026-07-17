@@ -1,0 +1,45 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# IDE / tooling
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*~
+*.code-workspace
+
+# .NET
+project.lock.json
+*.nupkg
+*.snupkg
+
+# XAF generated / user model deltas & cache
+**/Model.Cache.xafml
+**/Model.User.xafml
+**/*.xafml.bak
+
+# Local SQLite databases (recreated via `--updateDatabase`)
+DataspaceOperator.Xaf
+DataspaceOperator.XafEasyTest
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Logs / temp
+*.log
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SQLite WAL/SHM sidecars
+*-shm
+*-wal

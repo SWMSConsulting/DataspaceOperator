@@ -1,0 +1,61 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using DataspaceOperator.Core.Abstractions;
+using DataspaceOperator.Core.Domain;
+
+namespace DataspaceOperator.Core.Crypto;
+
+/// <summary>
+/// Resolves did:web identifiers to DID documents over HTTP, per the did:web method:
+///   did:web:example.com            -> https://example.com/.well-known/did.json
+///   did:web:example.com:path:sub   -> https://example.com/path/sub/did.json
+/// </summary>
+public sealed class DidWebResolver(HttpClient http, bool useHttps = true) : IDidResolver
+{
+    public async Task<DidDocument?> ResolveAsync(string did, CancellationToken ct = default)
+    {
+        var url = DidWebToUrl(did, useHttps);
+        try
+        {
+            return await http.GetFromJsonAsync<DidDocument>(url, ct);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+    }
+
+    public static string DidWebToUrl(string did, bool useHttps = true)
+    {
+        const string prefix = "did:web:";
+        if (!did.StartsWith(prefix, StringComparison.Ordinal))
+            throw new NotSupportedException($"Only did:web is supported, got '{did}'.");
+
+        var rest = did[prefix.Length..];
+        var segments = rest.Split(':');
+        // First segment is host[%3Aport]; the rest are path segments.
+        var host = Uri.UnescapeDataString(segments[0]);
+        var scheme = useHttps ? "https" : "http";
+
+        if (segments.Length == 1)
+            return $"{scheme}://{host}/.well-known/did.json";
+
+        var path = string.Join('/', segments[1..].Select(Uri.UnescapeDataString));
+        return $"{scheme}://{host}/{path}/did.json";
+    }
+
+    /// <summary>Find the Ed25519 public key for a given verification-method id (kid), or the first key.</summary>
+    public static Ed25519Key? GetKey(DidDocument doc, string? kid)
+    {
+        VerificationMethod? vm =
+            (kid is not null ? doc.VerificationMethod.FirstOrDefault(v => v.Id == kid) : null)
+            ?? doc.VerificationMethod.FirstOrDefault();
+        if (vm?.PublicKeyJwk is null) return null;
+        return Ed25519Key.FromPublicJwk(vm.PublicKeyJwk);
+    }
+
+    public static string? GetCredentialServiceEndpoint(DidDocument doc) =>
+        doc.Service.FirstOrDefault(s => s.Type == "CredentialService")?.ServiceEndpoint;
+
+    public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+}

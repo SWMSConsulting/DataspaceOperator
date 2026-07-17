@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DataspaceOperator.Core/DataspaceOperator.Core.csproj" />
+    <Project Path="src/DataspaceOperator.Endpoints/DataspaceOperator.Endpoints.csproj" />
+    <Project Path="src/DataspaceOperator.ProtocolHost/DataspaceOperator.ProtocolHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DataspaceOperator.Core.Tests/DataspaceOperator.Core.Tests.csproj" />
+  </Folder>
+</Solution>
