@@ -98,9 +98,9 @@ public static class ProtocolEndpoints
     // (D) Status list — W3C Bitstring StatusList (revocation).
     private static void MapStatusList(IEndpointRouteBuilder app)
     {
-        app.MapGet("/status-lists/revocation", (StatusListService statusList) =>
+        app.MapGet("/status-lists/revocation", async (StatusListService statusList) =>
         {
-            var jwt = statusList.BuildStatusListCredentialJwt();
+            var jwt = await statusList.BuildStatusListCredentialJwtAsync();
             return Results.Text(jwt, "application/jwt", Encoding.ASCII);
         });
     }

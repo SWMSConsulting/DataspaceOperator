@@ -32,14 +32,6 @@ public interface IParticipantStore
     Task UpsertAsync(Participant participant, CancellationToken ct = default);
 }
 
-public interface IBpnDidStore
-{
-    Task UpsertAsync(BpnDidEntry entry, CancellationToken ct = default);
-    Task RemoveByBpnAsync(string bpn, CancellationToken ct = default);
-    /// <summary>The full BPN -&gt; DID map served by the BDRS directory endpoint.</summary>
-    Task<IReadOnlyDictionary<string, string>> GetDirectoryAsync(CancellationToken ct = default);
-}
-
 public interface ITrustedIssuerStore
 {
     Task<IReadOnlyList<TrustedIssuer>> ListAsync(CancellationToken ct = default);
@@ -47,9 +39,16 @@ public interface ITrustedIssuerStore
     Task UpsertAsync(TrustedIssuer issuer, CancellationToken ct = default);
 }
 
+public interface ICredentialDefinitionStore
+{
+    Task<CredentialDefinition?> GetByTypeAsync(string credentialType, CancellationToken ct = default);
+    Task<IReadOnlyList<CredentialDefinition>> ListAsync(CancellationToken ct = default);
+}
+
 public interface ICredentialStore
 {
-    Task AddAsync(IssuedCredential credential, CancellationToken ct = default);
+    /// <summary>Persists the credential and returns its stored id (assigned by the store).</summary>
+    Task<Guid> AddAsync(IssuedCredential credential, CancellationToken ct = default);
     Task<IssuedCredential?> GetAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<IssuedCredential>> ListByHolderAsync(string holderDid, CancellationToken ct = default);
     Task SetLifecycleAsync(Guid id, CredentialLifecycle lifecycle, CancellationToken ct = default);

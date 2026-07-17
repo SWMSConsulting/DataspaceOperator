@@ -17,9 +17,10 @@ public class XafEFCoreDbContext : DbContext {
 
     // Dataspace operator business objects
     public DbSet<ParticipantEntity> Participants { get; set; }
-    public DbSet<BpnDidEntryEntity> BpnDidEntries { get; set; }
     public DbSet<TrustedIssuerEntity> TrustedIssuers { get; set; }
+    public DbSet<CredentialDefinitionEntity> CredentialDefinitions { get; set; }
     public DbSet<IssuedCredentialEntity> IssuedCredentials { get; set; }
+    public DbSet<StatusListStateEntity> StatusListState { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         base.OnModelCreating(modelBuilder);

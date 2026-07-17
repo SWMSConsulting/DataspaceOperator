@@ -18,7 +18,8 @@ public static class VerifiableCredentials
         JsonObject credentialSubjectClaims,
         TimeSpan validity,
         JsonObject? credentialStatus = null,
-        string? credentialId = null)
+        string? credentialId = null,
+        IReadOnlyList<string>? additionalContexts = null)
     {
         var now = DateTimeOffset.UtcNow;
         var exp = now.Add(validity);
@@ -31,9 +32,13 @@ public static class VerifiableCredentials
         var vcTypes = new JsonArray { "VerifiableCredential" };
         foreach (var t in types) if (t != "VerifiableCredential") vcTypes.Add(t);
 
+        var context = new JsonArray { "https://www.w3.org/2018/credentials/v1" };
+        if (additionalContexts is not null)
+            foreach (var c in additionalContexts) if (!string.IsNullOrWhiteSpace(c)) context.Add(c);
+
         var vc = new JsonObject
         {
-            ["@context"] = new JsonArray { "https://www.w3.org/2018/credentials/v1" },
+            ["@context"] = context,
             ["id"] = credentialId,
             ["type"] = vcTypes,
             ["issuer"] = issuerDid,

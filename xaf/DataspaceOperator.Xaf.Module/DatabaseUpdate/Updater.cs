@@ -29,26 +29,39 @@ public class Updater : ModuleUpdater {
             ObjectSpace.CommitChanges();
         }
 
+        // Seed issuable credential definitions (editable templates; add more types via the UI).
+        SeedDefinition("MembershipCredential", null,
+            "{\"holderIdentifier\":\"{bpn}\",\"memberOf\":\"Dataspace\",\"membershipType\":\"FullMember\",\"since\":\"{now}\"}");
+        SeedDefinition("DataExchangeGovernanceCredential", "https://w3id.org/catenax/credentials/v1.0.0",
+            "{\"holderIdentifier\":\"{bpn}\",\"contractVersion\":\"1.0.0\",\"contractTemplate\":\"https://public.example.org/contracts/DataExchangeGovernance.v1.pdf\"}");
+        SeedDefinition("BpnCredential", "https://w3id.org/catenax/credentials/v1.0.0",
+            "{\"bpn\":\"{bpn}\",\"holderIdentifier\":\"{bpn}\"}");
+
         // Seed example participants from the MXD sample (Alice & Bob).
         SeedParticipant("Alice GmbH", "BPNL000000000001", "did:web:alice-ih%3A7083:alice");
         SeedParticipant("Bob AG", "BPNL000000000002", "did:web:bob-ih%3A7083:bob");
         ObjectSpace.CommitChanges();
+
+        void SeedDefinition(string type, string? contextUrl, string template) {
+            var d = ObjectSpace.FirstOrDefault<CredentialDefinitionEntity>(x => x.CredentialType == type);
+            if(d == null) {
+                d = ObjectSpace.CreateObject<CredentialDefinitionEntity>();
+                d.CredentialType = type;
+                d.ContextUrl = contextUrl;
+                d.ClaimTemplateJson = template;
+                d.ValiditySeconds = 31_536_000;
+            }
+        }
 
         void SeedParticipant(string name, string bpn, string did) {
             var p = ObjectSpace.FirstOrDefault<ParticipantEntity>(x => x.Did == did);
             if(p == null) {
                 p = ObjectSpace.CreateObject<ParticipantEntity>();
                 p.Name = name;
-                p.Bpn = bpn;
+                p.Bpn = bpn;          // BPN↔DID live on the participant; BDRS projects over it
                 p.Did = did;
                 p.State = ParticipantState.Active;
                 p.OnboardedUtc = DateTime.UtcNow;
-            }
-            var entry = ObjectSpace.FirstOrDefault<BpnDidEntryEntity>(x => x.Bpn == bpn);
-            if(entry == null) {
-                entry = ObjectSpace.CreateObject<BpnDidEntryEntity>();
-                entry.Bpn = bpn;
-                entry.Did = did;
             }
         }
 

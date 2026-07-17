@@ -86,7 +86,11 @@ public class Startup {
             if(env.IsDevelopment()) {
                 endpoints.MapPost("/admin/issue", async (string did, string? type, DcpIssuanceService issuance, CancellationToken ct) => {
                     var r = await issuance.IssueAsync(did, type ?? "MembershipCredential", ct);
-                    return Results.Ok(new { r.Id, r.CredentialType, credential = r.Jwt });
+                    return Results.Ok(new { r.Id, r.CredentialType, delivery = r.Delivery.ToString(), credential = r.Jwt });
+                });
+                endpoints.MapPost("/admin/credentials/{id}/revoke", async (Guid id, DcpIssuanceService issuance, CancellationToken ct) => {
+                    await issuance.RevokeAsync(id, ct);
+                    return Results.Ok(new { revoked = id });
                 });
             }
             endpoints.MapXafEndpoints();

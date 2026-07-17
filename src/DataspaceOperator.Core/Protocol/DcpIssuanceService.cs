@@ -6,36 +6,64 @@ using DataspaceOperator.Core.Domain;
 namespace DataspaceOperator.Core.Protocol;
 
 /// <summary>
-/// Issues credentials to participants. This is the "issuer logic" we own instead of the EDC engine:
-/// it maps participant data -&gt; credentialSubject, signs a JWT-VC, records it, and hands it back
-/// for delivery to the holder's own wallet.
+/// Issues credentials to participants. Data-driven: the credential type is looked up in the
+/// <see cref="ICredentialDefinitionStore"/> and the credentialSubject is built from the definition's
+/// JSON template ({bpn}/{did}/{name}/{now} placeholders). Falls back to built-in shapes if no
+/// definition and no store are available, so the demo host keeps working.
 /// </summary>
 public sealed class DcpIssuanceService(
     IIssuerKeyProvider keys,
     IParticipantStore participants,
     ICredentialStore credentials,
-    StatusListService statusList)
+    StatusListService statusList,
+    ICredentialDefinitionStore? definitions = null,
+    ICredentialDeliveryService? delivery = null)
 {
-    public sealed record IssuedResult(string CredentialType, string Jwt, Guid Id);
+    public sealed record IssuedResult(string CredentialType, string Jwt, Guid Id, DeliveryStatus Delivery);
 
-    /// <summary>Mint + record a credential of the given type for a participant.</summary>
     public async Task<IssuedResult> IssueAsync(string holderDid, string credentialType, CancellationToken ct = default)
     {
         var participant = await participants.GetByDidAsync(holderDid, ct)
             ?? throw new InvalidOperationException($"Unknown participant '{holderDid}'.");
 
-        var claims = BuildSubjectClaims(credentialType, participant);
-        var index = statusList.Allocate();
-        var status = statusList.StatusEntryFor(index);
+        var def = definitions is null ? null : await definitions.GetByTypeAsync(credentialType, ct);
 
-        var validity = TimeSpan.FromDays(365);
+        JsonObject claims;
+        string? contextUrl;
+        TimeSpan validity;
+        if (def is not null)
+        {
+            claims = BuildClaimsFromTemplate(def.ClaimTemplateJson, participant);
+            contextUrl = def.ContextUrl;
+            validity = TimeSpan.FromSeconds(def.ValiditySeconds);
+        }
+        else
+        {
+            claims = BuildBuiltInClaims(credentialType, participant);
+            contextUrl = null;
+            validity = TimeSpan.FromDays(365);
+        }
+
+        var index = await statusList.AllocateAsync(ct);
+        var status = statusList.StatusEntryFor(index);
         var jwt = VerifiableCredentials.IssueJwtVc(
             keys.SigningKey, keys.IssuerDid, keys.KeyId,
             subjectDid: holderDid,
             types: [credentialType],
             credentialSubjectClaims: claims,
             validity: validity,
-            credentialStatus: status);
+            credentialStatus: status,
+            additionalContexts: contextUrl is null ? null : [contextUrl]);
+
+        // Deliver to the holder's own wallet (CredentialService, discovered from its DID). Best-effort.
+        var deliveryStatus = DeliveryStatus.NotAttempted;
+        DateTimeOffset? deliveredUtc = null;
+        if (delivery is not null)
+        {
+            var res = await delivery.DeliverAsync(holderDid, [new CredentialToDeliver(credentialType, jwt)], ct);
+            deliveryStatus = res.Success ? DeliveryStatus.Delivered : DeliveryStatus.Failed;
+            if (res.Success) deliveredUtc = DateTimeOffset.UtcNow;
+        }
 
         var record = new IssuedCredential
         {
@@ -46,9 +74,11 @@ public sealed class DcpIssuanceService(
             Lifecycle = CredentialLifecycle.Issued,
             IssuedUtc = DateTimeOffset.UtcNow,
             ExpiresUtc = DateTimeOffset.UtcNow.Add(validity),
+            DeliveryStatus = deliveryStatus,
+            DeliveredUtc = deliveredUtc,
         };
-        await credentials.AddAsync(record, ct);
-        return new IssuedResult(credentialType, jwt, record.Id);
+        var storedId = await credentials.AddAsync(record, ct);
+        return new IssuedResult(credentialType, jwt, storedId, deliveryStatus);
     }
 
     /// <summary>Revoke a credential: flip the status-list bit and mark the record.</summary>
@@ -56,11 +86,54 @@ public sealed class DcpIssuanceService(
     {
         var cred = await credentials.GetAsync(credentialId, ct)
             ?? throw new InvalidOperationException($"Unknown credential '{credentialId}'.");
-        statusList.Revoke(cred.StatusListIndex);
+        await statusList.RevokeAsync(cred.StatusListIndex, ct);
         await credentials.SetLifecycleAsync(credentialId, CredentialLifecycle.Revoked, ct);
     }
 
-    private static JsonObject BuildSubjectClaims(string credentialType, Participant p) => credentialType switch
+    // --- template rendering ---
+
+    private static JsonObject BuildClaimsFromTemplate(string templateJson, Participant p)
+    {
+        var vars = Vars(p);
+        var parsed = JsonNode.Parse(string.IsNullOrWhiteSpace(templateJson) ? "{}" : templateJson);
+        return (Substitute(parsed, vars) as JsonObject) ?? new JsonObject();
+    }
+
+    private static Dictionary<string, string> Vars(Participant p) => new()
+    {
+        ["bpn"] = p.Bpn,
+        ["did"] = p.Did,
+        ["name"] = p.Name,
+        ["now"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+    };
+
+    private static JsonNode? Substitute(JsonNode? node, Dictionary<string, string> vars)
+    {
+        switch (node)
+        {
+            case JsonObject o:
+                var ro = new JsonObject();
+                foreach (var kv in o) ro[kv.Key] = Substitute(kv.Value, vars);
+                return ro;
+            case JsonArray a:
+                var ra = new JsonArray();
+                foreach (var it in a) ra.Add(Substitute(it, vars));
+                return ra;
+            case JsonValue v:
+                if (v.TryGetValue<string>(out var s))
+                {
+                    foreach (var kv in vars) s = s.Replace("{" + kv.Key + "}", kv.Value);
+                    return JsonValue.Create(s);
+                }
+                return v.DeepClone();
+            default:
+                return null;
+        }
+    }
+
+    // --- built-in fallbacks (used when no CredentialDefinition/store is present) ---
+
+    private static JsonObject BuildBuiltInClaims(string credentialType, Participant p) => credentialType switch
     {
         "MembershipCredential" => new JsonObject
         {

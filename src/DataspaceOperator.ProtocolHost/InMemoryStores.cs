@@ -5,22 +5,12 @@ using DataspaceOperator.Core.Domain;
 
 namespace DataspaceOperator.ProtocolHost;
 
-/// <summary>In-memory issuer key. In production this comes from a secret store; the seed can be
-/// injected (base64) for a stable DID, otherwise a fresh key is generated at startup.</summary>
-public sealed class InMemoryIssuerKeyProvider : IIssuerKeyProvider
+/// <summary>In-memory status list state (ephemeral — for the demo host only).</summary>
+public sealed class InMemoryStatusListStore : IStatusListStore
 {
-    public InMemoryIssuerKeyProvider(string issuerDid, string? privateSeedBase64)
-    {
-        IssuerDid = issuerDid;
-        KeyId = $"{issuerDid}#key-1";
-        SigningKey = privateSeedBase64 is { Length: > 0 }
-            ? Ed25519Key.FromPrivateSeed(Convert.FromBase64String(privateSeedBase64))
-            : Ed25519Key.Generate();
-    }
-
-    public string IssuerDid { get; }
-    public string KeyId { get; }
-    public Ed25519Key SigningKey { get; }
+    private readonly StatusListState _state = new();
+    public Task<StatusListState> LoadAsync(CancellationToken ct = default) => Task.FromResult(_state);
+    public Task SaveAsync(StatusListState state, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 public sealed class InMemoryParticipantStore : IParticipantStore
@@ -38,27 +28,6 @@ public sealed class InMemoryParticipantStore : IParticipantStore
         _byDid[participant.Did] = participant;
         return Task.CompletedTask;
     }
-}
-
-public sealed class InMemoryBpnDidStore : IBpnDidStore
-{
-    private readonly ConcurrentDictionary<string, string> _bpnToDid = new(StringComparer.Ordinal);
-
-    public Task UpsertAsync(BpnDidEntry entry, CancellationToken ct = default)
-    {
-        _bpnToDid[entry.Bpn] = entry.Did;
-        return Task.CompletedTask;
-    }
-
-    public Task RemoveByBpnAsync(string bpn, CancellationToken ct = default)
-    {
-        _bpnToDid.TryRemove(bpn, out _);
-        return Task.CompletedTask;
-    }
-
-    public Task<IReadOnlyDictionary<string, string>> GetDirectoryAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyDictionary<string, string>>(
-            new Dictionary<string, string>(_bpnToDid, StringComparer.Ordinal));
 }
 
 public sealed class InMemoryTrustedIssuerStore : ITrustedIssuerStore
@@ -86,10 +55,10 @@ public sealed class InMemoryCredentialStore : ICredentialStore
 {
     private readonly ConcurrentDictionary<Guid, IssuedCredential> _byId = new();
 
-    public Task AddAsync(IssuedCredential credential, CancellationToken ct = default)
+    public Task<Guid> AddAsync(IssuedCredential credential, CancellationToken ct = default)
     {
         _byId[credential.Id] = credential;
-        return Task.CompletedTask;
+        return Task.FromResult(credential.Id);
     }
 
     public Task<IssuedCredential?> GetAsync(Guid id, CancellationToken ct = default) =>

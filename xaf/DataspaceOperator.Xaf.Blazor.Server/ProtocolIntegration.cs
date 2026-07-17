@@ -3,6 +3,7 @@ using DataspaceOperator.Core.Abstractions;
 using DataspaceOperator.Core.Crypto;
 using DataspaceOperator.Core.Domain;
 using DataspaceOperator.Core.Protocol;
+using DataspaceOperator.Endpoints;
 using DataspaceOperator.Xaf.Module.BusinessObjects;
 
 namespace DataspaceOperator.Xaf.Blazor.Server;
@@ -20,42 +21,30 @@ public static class ProtocolIntegration
         var issuerDid = config["Issuer:Did"] ?? "did:web:issuer.localhost";
 
         services.AddHttpClient();
-        services.AddSingleton<IIssuerKeyProvider>(_ => new ConfigIssuerKeyProvider(config));
+        // Issuer signing key from the secret store (env/user-secrets/appsettings; vault-ready seam).
+        services.AddSingleton<IIssuerKeyProvider>(_ =>
+            IssuerKeyFactory.CreateAsync(new ConfigurationSecretStore(config), issuerDid).GetAwaiter().GetResult());
         services.AddSingleton<DidDocumentBuilder>();
         services.AddSingleton<IssuerMetadata>();
-        services.AddSingleton(sp => new StatusListService(
-            sp.GetRequiredService<IIssuerKeyProvider>(), $"{issuerDid}/status-lists/revocation"));
+        // Persistent status list (revocation survives restarts).
+        services.AddScoped<IStatusListStore, XafStatusListStore>();
+        services.AddScoped(sp => new StatusListService(
+            sp.GetRequiredService<IIssuerKeyProvider>(), sp.GetRequiredService<IStatusListStore>(),
+            $"{issuerDid}/status-lists/revocation"));
         services.AddSingleton<IDidResolver, OperatorDidResolver>();
 
         // store adapters over the XAF object space (per-request)
         services.AddScoped<IParticipantStore, XafParticipantStore>();
-        services.AddScoped<IBpnDidStore, XafBpnDidStore>();
         services.AddScoped<ITrustedIssuerStore, XafTrustedIssuerStore>();
+        services.AddScoped<ICredentialDefinitionStore, XafCredentialDefinitionStore>();
         services.AddScoped<ICredentialStore, XafCredentialStore>();
+        services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
 
         services.AddScoped<VpVerifier>();
         services.AddScoped<BdrsDirectoryService>();
         services.AddScoped<DcpIssuanceService>();
         return services;
     }
-}
-
-/// <summary>Issuer signing key from configuration. Provide a stable base64 seed in production.</summary>
-public sealed class ConfigIssuerKeyProvider : IIssuerKeyProvider
-{
-    public ConfigIssuerKeyProvider(IConfiguration config)
-    {
-        IssuerDid = config["Issuer:Did"] ?? "did:web:issuer.localhost";
-        KeyId = $"{IssuerDid}#key-1";
-        var seed = config["Issuer:PrivateSeedBase64"];
-        SigningKey = string.IsNullOrEmpty(seed)
-            ? Ed25519Key.Generate()
-            : Ed25519Key.FromPrivateSeed(Convert.FromBase64String(seed));
-    }
-
-    public string IssuerDid { get; }
-    public string KeyId { get; }
-    public Ed25519Key SigningKey { get; }
 }
 
 /// <summary>Resolves our own issuer DID locally; everything else via did:web over HTTP.</summary>
@@ -108,37 +97,6 @@ public sealed class XafParticipantStore(INonSecuredObjectSpaceFactory factory) :
     };
 }
 
-public sealed class XafBpnDidStore(INonSecuredObjectSpaceFactory factory) : IBpnDidStore
-{
-    public Task UpsertAsync(BpnDidEntry entry, CancellationToken ct = default)
-    {
-        using var os = factory.CreateNonSecuredObjectSpace(typeof(BpnDidEntryEntity));
-        var e = os.GetObjectsQuery<BpnDidEntryEntity>().FirstOrDefault(x => x.Bpn == entry.Bpn)
-                ?? os.CreateObject<BpnDidEntryEntity>();
-        e.Bpn = entry.Bpn; e.Did = entry.Did;
-        os.CommitChanges();
-        return Task.CompletedTask;
-    }
-
-    public Task RemoveByBpnAsync(string bpn, CancellationToken ct = default)
-    {
-        using var os = factory.CreateNonSecuredObjectSpace(typeof(BpnDidEntryEntity));
-        var e = os.GetObjectsQuery<BpnDidEntryEntity>().FirstOrDefault(x => x.Bpn == bpn);
-        if (e is not null) { os.Delete(e); os.CommitChanges(); }
-        return Task.CompletedTask;
-    }
-
-    public Task<IReadOnlyDictionary<string, string>> GetDirectoryAsync(CancellationToken ct = default)
-    {
-        using var os = factory.CreateNonSecuredObjectSpace(typeof(BpnDidEntryEntity));
-        var map = os.GetObjectsQuery<BpnDidEntryEntity>()
-            .Where(x => x.Bpn != null && x.Did != null)
-            .ToList()
-            .ToDictionary(x => x.Bpn!, x => x.Did!, StringComparer.Ordinal);
-        return Task.FromResult<IReadOnlyDictionary<string, string>>(map);
-    }
-}
-
 public sealed class XafTrustedIssuerStore(INonSecuredObjectSpaceFactory factory) : ITrustedIssuerStore
 {
     public Task<IReadOnlyList<TrustedIssuer>> ListAsync(CancellationToken ct = default)
@@ -177,17 +135,71 @@ public sealed class XafTrustedIssuerStore(INonSecuredObjectSpaceFactory factory)
     };
 }
 
+public sealed class XafCredentialDefinitionStore(INonSecuredObjectSpaceFactory factory) : ICredentialDefinitionStore
+{
+    public Task<CredentialDefinition?> GetByTypeAsync(string credentialType, CancellationToken ct = default)
+    {
+        using var os = factory.CreateNonSecuredObjectSpace(typeof(CredentialDefinitionEntity));
+        var e = os.GetObjectsQuery<CredentialDefinitionEntity>().FirstOrDefault(x => x.CredentialType == credentialType);
+        return Task.FromResult(e is null ? null : Map(e));
+    }
+
+    public Task<IReadOnlyList<CredentialDefinition>> ListAsync(CancellationToken ct = default)
+    {
+        using var os = factory.CreateNonSecuredObjectSpace(typeof(CredentialDefinitionEntity));
+        var list = os.GetObjectsQuery<CredentialDefinitionEntity>().ToList().Select(Map).ToList();
+        return Task.FromResult<IReadOnlyList<CredentialDefinition>>(list);
+    }
+
+    private static CredentialDefinition Map(CredentialDefinitionEntity e) => new()
+    {
+        CredentialType = e.CredentialType ?? "",
+        ContextUrl = e.ContextUrl,
+        ClaimTemplateJson = string.IsNullOrWhiteSpace(e.ClaimTemplateJson) ? "{}" : e.ClaimTemplateJson!,
+        ValiditySeconds = e.ValiditySeconds,
+    };
+}
+
+public sealed class XafStatusListStore(INonSecuredObjectSpaceFactory factory) : IStatusListStore
+{
+    public Task<StatusListState> LoadAsync(CancellationToken ct = default)
+    {
+        using var os = factory.CreateNonSecuredObjectSpace(typeof(StatusListStateEntity));
+        var e = os.GetObjectsQuery<StatusListStateEntity>().FirstOrDefault();
+        var state = new StatusListState();
+        if (e is not null)
+        {
+            state.NextIndex = e.NextIndex;
+            if (e.Bits is { Length: > 0 }) state.Bits = e.Bits;
+        }
+        return Task.FromResult(state);
+    }
+
+    public Task SaveAsync(StatusListState state, CancellationToken ct = default)
+    {
+        using var os = factory.CreateNonSecuredObjectSpace(typeof(StatusListStateEntity));
+        var e = os.GetObjectsQuery<StatusListStateEntity>().FirstOrDefault() ?? os.CreateObject<StatusListStateEntity>();
+        e.NextIndex = state.NextIndex;
+        e.Bits = state.Bits;
+        os.CommitChanges();
+        return Task.CompletedTask;
+    }
+}
+
 public sealed class XafCredentialStore(INonSecuredObjectSpaceFactory factory) : ICredentialStore
 {
-    public Task AddAsync(IssuedCredential credential, CancellationToken ct = default)
+    public Task<Guid> AddAsync(IssuedCredential credential, CancellationToken ct = default)
     {
         using var os = factory.CreateNonSecuredObjectSpace(typeof(IssuedCredentialEntity));
         var e = os.CreateObject<IssuedCredentialEntity>();
-        e.HolderDid = credential.HolderDid; e.CredentialType = credential.CredentialType; e.Jwt = credential.Jwt;
+        // link to the holder participant (1-n association)
+        e.Participant = os.GetObjectsQuery<ParticipantEntity>().FirstOrDefault(x => x.Did == credential.HolderDid);
+        e.CredentialType = credential.CredentialType; e.Jwt = credential.Jwt;
         e.StatusListIndex = credential.StatusListIndex; e.Lifecycle = credential.Lifecycle;
         e.IssuedUtc = credential.IssuedUtc.UtcDateTime; e.ExpiresUtc = credential.ExpiresUtc?.UtcDateTime;
+        e.DeliveryStatus = credential.DeliveryStatus; e.DeliveredUtc = credential.DeliveredUtc?.UtcDateTime;
         os.CommitChanges();
-        return Task.CompletedTask;
+        return Task.FromResult(e.ID);
     }
 
     public Task<IssuedCredential?> GetAsync(Guid id, CancellationToken ct = default)
@@ -200,7 +212,8 @@ public sealed class XafCredentialStore(INonSecuredObjectSpaceFactory factory) : 
     public Task<IReadOnlyList<IssuedCredential>> ListByHolderAsync(string holderDid, CancellationToken ct = default)
     {
         using var os = factory.CreateNonSecuredObjectSpace(typeof(IssuedCredentialEntity));
-        var list = os.GetObjectsQuery<IssuedCredentialEntity>().Where(x => x.HolderDid == holderDid)
+        var list = os.GetObjectsQuery<IssuedCredentialEntity>()
+            .Where(x => x.Participant != null && x.Participant.Did == holderDid)
             .ToList().Select(Map).ToList();
         return Task.FromResult<IReadOnlyList<IssuedCredential>>(list);
     }
@@ -215,8 +228,9 @@ public sealed class XafCredentialStore(INonSecuredObjectSpaceFactory factory) : 
 
     private static IssuedCredential Map(IssuedCredentialEntity e) => new()
     {
-        Id = e.ID, HolderDid = e.HolderDid ?? "", CredentialType = e.CredentialType ?? "",
+        Id = e.ID, HolderDid = e.Participant?.Did ?? "", CredentialType = e.CredentialType ?? "",
         Jwt = e.Jwt ?? "", StatusListIndex = e.StatusListIndex, Lifecycle = e.Lifecycle,
         IssuedUtc = e.IssuedUtc, ExpiresUtc = e.ExpiresUtc,
+        DeliveryStatus = e.DeliveryStatus, DeliveredUtc = e.DeliveredUtc,
     };
 }
