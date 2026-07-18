@@ -2,6 +2,7 @@ using DevExpress.ExpressApp;
 using DevExpress.ExpressApp.Actions;
 using DevExpress.Persistent.Base;
 using Microsoft.Extensions.DependencyInjection;
+using DataspaceOperator.Core.Domain;
 using DataspaceOperator.Core.Protocol;
 using DataspaceOperator.Xaf.Module.BusinessObjects;
 
@@ -36,13 +37,33 @@ public class IssueMembershipController : ViewController
             return;
         }
 
-        using var scope = Application.ServiceProvider.CreateScope();
-        var issuance = scope.ServiceProvider.GetRequiredService<DcpIssuanceService>();
-        var result = issuance.IssueAsync(participant.Did, "MembershipCredential").GetAwaiter().GetResult();
+        var appServices = Application.ServiceProvider;
+        var did = participant.Did;
+        try
+        {
+            // Offload to the thread pool: avoids a sync-over-async deadlock on the Blazor circuit
+            // (issuance awaits HTTP delivery + EF). The scope is kept alive until issuance completes.
+            var result = Task.Run(async () =>
+            {
+                using var scope = appServices.CreateScope();
+                var issuance = scope.ServiceProvider.GetRequiredService<DcpIssuanceService>();
+                return await issuance.IssueAsync(did, "MembershipCredential");
+            }).GetAwaiter().GetResult();
 
-        ObjectSpace.Refresh();
-        Application.ShowViewStrategy.ShowMessage(
-            $"Issued {result.CredentialType} for {participant.Name} (id {result.Id}).",
-            InformationType.Success);
+            ObjectSpace.Refresh();
+
+            // Delivery is best-effort: the holder's own wallet may be unreachable from here.
+            var note = result.Delivery == DeliveryStatus.Delivered
+                ? "delivered to the holder's wallet"
+                : $"stored (delivery: {result.Delivery} — holder wallet not reachable)";
+            Application.ShowViewStrategy.ShowMessage(
+                $"Issued {result.CredentialType} for {participant.Name}; {note}.",
+                InformationType.Success);
+        }
+        catch (Exception ex)
+        {
+            Application.ShowViewStrategy.ShowMessage(
+                $"Issuance failed: {ex.GetBaseException().Message}", InformationType.Error);
+        }
     }
 }
