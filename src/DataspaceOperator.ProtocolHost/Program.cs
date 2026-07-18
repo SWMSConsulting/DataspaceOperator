@@ -10,9 +10,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 var issuerDid = builder.Configuration["Issuer:Did"] ?? "did:web:issuer.localhost";
 
-// --- issuer identity (key seed from the secret store: env/user-secrets/appsettings; vault-ready) ---
-var issuerKey = await IssuerKeyFactory.CreateAsync(new ConfigurationSecretStore(builder.Configuration), issuerDid);
-builder.Services.AddSingleton<IIssuerKeyProvider>(issuerKey);
+// --- issuer identity (key seed from the secret store: Vault if enabled, else config) ---
+using (var startupHttp = new HttpClient())
+{
+    var issuerKey = await SecretStores.BuildIssuerKeyProviderAsync(builder.Configuration, startupHttp, issuerDid);
+    builder.Services.AddSingleton<IIssuerKeyProvider>(issuerKey);
+}
 
 // --- stores (in-memory; swap for XAF/EF-backed implementations) ---
 builder.Services.AddSingleton<IParticipantStore, InMemoryParticipantStore>();

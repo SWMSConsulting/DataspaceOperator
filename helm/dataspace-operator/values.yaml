@@ -82,20 +82,25 @@ affinity: {}
 
 ## ---------------------------------------------------------------------------
 ## HashiCorp Vault (optional). Disabled by default.
-## The app does NOT yet have a native Vault client (only the ISecretStore seam). When enabled,
-## this deploys Vault and adds Agent-Injector annotations that render the issuer seed to a file;
-## turning that into the Issuer__PrivateSeedBase64 env still requires either sourcing the file in
-## the container command or implementing a HashiCorpVaultSecretStore. See README.
+## The app reads the issuer seed directly from Vault (KV v2) via the built-in
+## HashiCorpVaultSecretStore when vault.app.enabled=true.
 ## ---------------------------------------------------------------------------
 vault:
+  # Deploy the HashiCorp Vault subchart (dev mode is insecure — evaluation only).
+  # You can also point vault.app at any existing/external Vault without deploying this subchart.
   enabled: false
-  # Subchart values (only used when enabled). Dev mode is insecure — for evaluation only.
   server:
     dev:
       enabled: true
-  # Agent-injector wiring for our pod (applied only when injector.enabled):
-  injector:
+  # Native app integration: the app reads the issuer seed from Vault at startup.
+  app:
     enabled: false
-    role: "dataspace-operator"
-    secretPath: "secret/data/dataspace-operator/issuer"
+    address: "http://vault:8200"
+    # Static token auth (dev). For production leave empty and use kubernetesRole.
+    token: ""
+    # Vault Kubernetes auth role bound to this release's ServiceAccount (used when token is empty).
+    kubernetesRole: ""
+    kubernetesAuthMount: "kubernetes"
+    kvMount: "secret"
+    secretPath: "dataspace-operator/issuer"
     seedField: "seed"

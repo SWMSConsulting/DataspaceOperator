@@ -44,9 +44,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Values.database.connectionString | replace "{dataDir}" .Values.persistence.mountPath -}}
 {{- end -}}
 
-{{/* Secret-backed env vars for the app + migration init container. */}}
+{{/* True when the app should read the issuer seed natively from Vault. */}}
+{{- define "dataspace-operator.vaultApp" -}}
+{{- and .Values.vault.enabled .Values.vault.app.enabled -}}
+{{- end -}}
+
+{{/* Secret-backed + Vault env vars for the app + migration init container. */}}
 {{- define "dataspace-operator.appSecretsEnv" -}}
-{{- if not (and .Values.vault.enabled .Values.vault.injector.enabled) }}
+{{- if not (eq (include "dataspace-operator.vaultApp" .) "true") }}
 - name: Issuer__PrivateSeedBase64
   valueFrom:
     secretKeyRef:
@@ -58,4 +63,26 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     secretKeyRef:
       name: {{ include "dataspace-operator.fullname" . }}
       key: url-signing-key
+{{- if eq (include "dataspace-operator.vaultApp" .) "true" }}
+- name: Vault__Enabled
+  value: "true"
+- name: Vault__Address
+  value: {{ .Values.vault.app.address | quote }}
+{{- with .Values.vault.app.token }}
+- name: Vault__Token
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.vault.app.kubernetesRole }}
+- name: Vault__KubernetesRole
+  value: {{ . | quote }}
+{{- end }}
+- name: Vault__KubernetesAuthMount
+  value: {{ .Values.vault.app.kubernetesAuthMount | quote }}
+- name: Vault__KvMount
+  value: {{ .Values.vault.app.kvMount | quote }}
+- name: Vault__SecretPath
+  value: {{ .Values.vault.app.secretPath | quote }}
+- name: Vault__SeedField
+  value: {{ .Values.vault.app.seedField | quote }}
+{{- end }}
 {{- end -}}

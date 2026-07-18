@@ -21,9 +21,9 @@ public static class ProtocolIntegration
         var issuerDid = config["Issuer:Did"] ?? "did:web:issuer.localhost";
 
         services.AddHttpClient();
-        // Issuer signing key from the secret store (env/user-secrets/appsettings; vault-ready seam).
+        // Issuer signing key from the secret store (HashiCorp Vault if Vault:Enabled, else config).
         services.AddSingleton<IIssuerKeyProvider>(_ =>
-            IssuerKeyFactory.CreateAsync(new ConfigurationSecretStore(config), issuerDid).GetAwaiter().GetResult());
+            SecretStores.BuildIssuerKeyProviderAsync(config, new HttpClient(), issuerDid).GetAwaiter().GetResult());
         services.AddSingleton<DidDocumentBuilder>();
         services.AddSingleton<IssuerMetadata>();
         // Persistent status list (revocation survives restarts).

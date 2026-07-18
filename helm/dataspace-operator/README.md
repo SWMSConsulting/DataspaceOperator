@@ -71,18 +71,27 @@ Then point your `did:web` host at `GET /.well-known/did.json` and expose the Ser
   your own onboarding/job. For evaluation, build with `BUILD_CONFIGURATION=Debug`.
 - `ASPNETCORE_ENVIRONMENT=Production` disables the dev-only `/admin/*` trigger endpoints.
 
-## HashiCorp Vault (optional) — status
+## HashiCorp Vault (optional) — native, end-to-end
 
-**The application does not yet have a native Vault client** — it reads the issuer seed from
-configuration/env via `ISecretStore` (`ConfigurationSecretStore`). So Vault is **opt-in scaffolding**,
-not a wired default:
+The application reads the issuer seed **directly from Vault** (KV v2) at startup via the built-in
+`HashiCorpVaultSecretStore`. Enable it with `vault.app.enabled=true`.
 
-- `vault.enabled=true` deploys the HashiCorp Vault subchart (dev mode by default — evaluation only).
-- `vault.injector.enabled=true` adds Agent-Injector annotations that render the seed to a file and an
-  `export Issuer__PrivateSeedBase64=...` template.
+- `vault.enabled=true` optionally deploys the HashiCorp Vault subchart (dev mode = evaluation only).
+  You can instead point `vault.app.address` at any existing/external Vault.
+- Auth:
+  - **Dev:** `vault.app.token` (static token).
+  - **Production:** leave the token empty and set `vault.app.kubernetesRole` — the app exchanges the
+    pod's ServiceAccount JWT for a Vault token via the Kubernetes auth method (mount
+    `vault.app.kubernetesAuthMount`).
+- The seed is read from `{kvMount}/data/{secretPath}`, field `seedField` (default `secret/data/dataspace-operator/issuer`, field `seed`).
 
-To make Vault the real source of the seed you still need **one** of:
-1. source the injected file in the container command (wrap the entrypoint), or
-2. implement a `HashiCorpVaultSecretStore : ISecretStore` in the app (the seam already exists).
+Write the seed into Vault, e.g.:
 
-Until then, the **Kubernetes Secret** path (default) is the supported way to supply the seed.
+```bash
+vault kv put secret/dataspace-operator/issuer seed="$(openssl rand -base64 32)"
+```
+
+When `vault.app.enabled=true`, the chart injects `Vault__*` env vars and stops mounting the seed from
+the Kubernetes Secret. Configure a Vault policy + Kubernetes auth role bound to this release's
+ServiceAccount (out of chart scope). The **Kubernetes Secret** path (default, `vault.app.enabled=false`)
+remains fully supported.
