@@ -15,6 +15,13 @@ public class XafEFCoreDbContext : DbContext {
     }
     //public DbSet<ModuleInfo> ModulesInfo { get; set; }
 
+    // Security system
+    public DbSet<ModelDifference> ModelDifferences { get; set; }
+    public DbSet<ModelDifferenceAspect> ModelDifferenceAspects { get; set; }
+    public DbSet<PermissionPolicyRole> Roles { get; set; }
+    public DbSet<ApplicationUser> Users { get; set; }
+    public DbSet<ApplicationUserLoginInfo> UserLoginsInfo { get; set; }
+
     // Dataspace operator business objects
     public DbSet<ParticipantEntity> Participants { get; set; }
     public DbSet<TrustedIssuerEntity> TrustedIssuers { get; set; }
@@ -30,5 +37,12 @@ public class XafEFCoreDbContext : DbContext {
         modelBuilder.SetOneToManyAssociationDeleteBehavior(DeleteBehavior.SetNull, DeleteBehavior.Cascade);
         modelBuilder.HasChangeTrackingStrategy(ChangeTrackingStrategy.ChangingAndChangedNotificationsWithOriginalValues);
         modelBuilder.UsePropertyAccessMode(PropertyAccessMode.PreferFieldDuringConstruction);
+        modelBuilder.Entity<ApplicationUserLoginInfo>(b => {
+            b.HasIndex(nameof(DevExpress.ExpressApp.Security.ISecurityUserLoginInfo.LoginProviderName), nameof(DevExpress.ExpressApp.Security.ISecurityUserLoginInfo.ProviderUserKey)).IsUnique();
+        });
+        modelBuilder.Entity<ModelDifference>()
+            .HasMany(t => t.Aspects)
+            .WithOne(t => t.Owner)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

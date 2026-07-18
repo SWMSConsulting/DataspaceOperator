@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using DataspaceOperator.Xaf.Blazor.Server.Services;
 using DataspaceOperator.Endpoints;
 using DataspaceOperator.Core.Protocol;
+using DevExpress.ExpressApp.Security;
+using DevExpress.Persistent.BaseImpl.EF.PermissionPolicy;
 
 namespace DataspaceOperator.Xaf.Blazor.Server;
 
@@ -37,7 +39,7 @@ public class Startup {
                 .Add<DataspaceOperator.Xaf.Module.XafModule>()
                 .Add<XafBlazorModule>();
             builder.ObjectSpaceProviders
-                .AddEFCore(options => {
+                .AddSecuredEFCore(options => {
                     options.PreFetchReferenceProperties();
                 })
                 .WithDbContext<DataspaceOperator.Xaf.Module.BusinessObjects.XafEFCoreDbContext>((serviceProvider, options) => {
@@ -58,10 +60,30 @@ public class Startup {
                     options.UseConnectionString(connectionString);
                 })
                 .AddNonPersistent();
+            builder.Security
+                .UseIntegratedMode(options => {
+                    options.Lockout.Enabled = true;
+                    options.RoleType = typeof(PermissionPolicyRole);
+                    options.UserType = typeof(DataspaceOperator.Xaf.Module.BusinessObjects.ApplicationUser);
+                    options.UserLoginInfoType = typeof(DataspaceOperator.Xaf.Module.BusinessObjects.ApplicationUserLoginInfo);
+                    options.Events.OnSecurityStrategyCreated += securityStrategy => {
+                        ((SecurityStrategy)securityStrategy).PermissionsReloadMode = PermissionsReloadMode.NoCache;
+                    };
+                })
+                .AddPasswordAuthentication(options => {
+                    options.IsSupportChangePassword = true;
+                });
         });
 
         // Dataspace protocol services (framework-independent core) backed by the XAF object space.
         services.AddDataspaceProtocol(Configuration);
+
+        var authentication = services.AddAuthentication(options => {
+            options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        });
+        authentication.AddCookie(options => {
+            options.LoginPath = "/LoginPage";
+        });
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -78,6 +100,9 @@ public class Startup {
         app.UseRequestLocalization();
         app.UseStaticFiles();
         app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.UseAntiforgery();
         app.UseXaf();
         app.UseEndpoints(endpoints => {
             // Dataspace protocol endpoints (did:web, BDRS directory, DCP issuance, status list)
