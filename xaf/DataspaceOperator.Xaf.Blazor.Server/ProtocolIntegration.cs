@@ -111,8 +111,9 @@ public sealed class XafTrustedIssuerStore(INonSecuredObjectSpaceFactory factory)
         using var os = factory.CreateNonSecuredObjectSpace(typeof(TrustedIssuerEntity));
         var e = os.GetObjectsQuery<TrustedIssuerEntity>().FirstOrDefault(x => x.Did == issuerDid);
         if (e is null) return Task.FromResult(false);
-        var types = Split(e.SupportedTypesCsv);
-        return Task.FromResult(types.Count == 0 || types.Contains(credentialType));
+        // empty SupportedTypes = trusted for all types ("*")
+        var trusted = e.SupportedTypes.Count == 0 || e.SupportedTypes.Any(t => t.Name == credentialType);
+        return Task.FromResult(trusted);
     }
 
     public Task UpsertAsync(TrustedIssuer issuer, CancellationToken ct = default)
@@ -121,17 +122,22 @@ public sealed class XafTrustedIssuerStore(INonSecuredObjectSpaceFactory factory)
         var e = os.GetObjectsQuery<TrustedIssuerEntity>().FirstOrDefault(x => x.Did == issuer.Did)
                 ?? os.CreateObject<TrustedIssuerEntity>();
         e.Did = issuer.Did; e.IsOwnIssuer = issuer.IsOwnIssuer;
-        e.SupportedTypesCsv = string.Join(',', issuer.SupportedTypes);
+        e.SupportedTypes.Clear();
+        foreach (var typeName in issuer.SupportedTypes)
+        {
+            var type = os.GetObjectsQuery<CredentialTypeEntity>().FirstOrDefault(t => t.Name == typeName)
+                       ?? os.CreateObject<CredentialTypeEntity>();
+            type.Name = typeName;
+            e.SupportedTypes.Add(type);
+        }
         os.CommitChanges();
         return Task.CompletedTask;
     }
 
-    private static List<string> Split(string? csv) =>
-        string.IsNullOrWhiteSpace(csv) ? [] : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-
     private static TrustedIssuer Map(TrustedIssuerEntity e) => new()
     {
-        Did = e.Did ?? "", IsOwnIssuer = e.IsOwnIssuer, SupportedTypes = Split(e.SupportedTypesCsv),
+        Did = e.Did ?? "", IsOwnIssuer = e.IsOwnIssuer,
+        SupportedTypes = e.SupportedTypes.Select(t => t.Name ?? "").Where(s => s.Length > 0).ToList(),
     };
 }
 

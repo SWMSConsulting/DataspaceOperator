@@ -36,6 +36,17 @@ public class VpVerifierTests
         public Task UpsertAsync(TrustedIssuer issuer, CancellationToken ct = default) => Task.CompletedTask;
     }
 
+    /// <summary>Trusts an issuer only for a specific set of credential types (per-type scoping).</summary>
+    private sealed class TypedTrustStore(string issuer, params string[] types) : ITrustedIssuerStore
+    {
+        private readonly HashSet<string> _types = new(types, StringComparer.Ordinal);
+        public Task<IReadOnlyList<TrustedIssuer>> ListAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<TrustedIssuer>>([]);
+        public Task<bool> IsTrustedAsync(string issuerDid, string type, CancellationToken ct = default) =>
+            Task.FromResult(issuerDid == issuer && _types.Contains(type));
+        public Task UpsertAsync(TrustedIssuer issuer, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
     private const string IssuerDid = "did:web:issuer.example";
     private const string HolderDid = "did:web:alice.example";
 
@@ -76,6 +87,28 @@ public class VpVerifierTests
     {
         var (vp, resolver, _, _) = BuildMembershipVp();
         var verifier = new VpVerifier(resolver, new TrustStore("did:web:someone.else")); // issuer not trusted
+
+        var result = await verifier.VerifyMembershipAsync(vp);
+
+        Assert.False(result.Success);
+        Assert.Contains("trusted issuer", result.Error);
+    }
+
+    [Fact]
+    public async Task Issuer_trusted_for_presented_type_is_accepted()
+    {
+        var (vp, resolver, _, _) = BuildMembershipVp();
+        var verifier = new VpVerifier(resolver, new TypedTrustStore(IssuerDid, "MembershipCredential"));
+
+        Assert.True((await verifier.VerifyMembershipAsync(vp)).Success);
+    }
+
+    [Fact]
+    public async Task Issuer_not_trusted_for_presented_type_is_rejected()
+    {
+        // issuer is trusted, but only for a DIFFERENT credential type than the one presented
+        var (vp, resolver, _, _) = BuildMembershipVp();
+        var verifier = new VpVerifier(resolver, new TypedTrustStore(IssuerDid, "DataExchangeGovernanceCredential"));
 
         var result = await verifier.VerifyMembershipAsync(vp);
 

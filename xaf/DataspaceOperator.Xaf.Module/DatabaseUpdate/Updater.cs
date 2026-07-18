@@ -20,13 +20,24 @@ public class Updater : ModuleUpdater {
 
         // Seed governance: trust our own issuer for all credential types.
         const string ownIssuerDid = "did:web:issuer.localhost";
+        // Known credential type names (pick list for a trusted issuer's SupportedTypes).
+        SeedType("MembershipCredential");
+        SeedType("DataExchangeGovernanceCredential");
+        SeedType("BpnCredential");
+
         var own = ObjectSpace.FirstOrDefault<TrustedIssuerEntity>(x => x.Did == ownIssuerDid);
         if(own == null) {
             own = ObjectSpace.CreateObject<TrustedIssuerEntity>();
             own.Did = ownIssuerDid;
-            own.IsOwnIssuer = true;
-            own.SupportedTypesCsv = "";
+            own.IsOwnIssuer = true;   // empty SupportedTypes = trusted for all types
             ObjectSpace.CommitChanges();
+        }
+
+        void SeedType(string name) {
+            if(ObjectSpace.FirstOrDefault<CredentialTypeEntity>(x => x.Name == name) == null) {
+                var t = ObjectSpace.CreateObject<CredentialTypeEntity>();
+                t.Name = name;
+            }
         }
 
         // Seed issuable credential definitions (editable templates; add more types via the UI).

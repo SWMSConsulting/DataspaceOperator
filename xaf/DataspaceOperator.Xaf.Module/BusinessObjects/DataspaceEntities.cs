@@ -34,10 +34,30 @@ public class ParticipantEntity : BaseObject
 [System.ComponentModel.DefaultProperty(nameof(Did))]
 public class TrustedIssuerEntity : BaseObject
 {
+    public TrustedIssuerEntity()
+    {
+        SupportedTypes = new ObservableCollection<CredentialTypeEntity>();
+    }
+
     public virtual string? Did { get; set; }
-    /// <summary>Comma-separated credential types; empty means all types ("*").</summary>
-    public virtual string? SupportedTypesCsv { get; set; }
     public virtual bool IsOwnIssuer { get; set; }
+
+    /// <summary>Credential types this issuer is trusted for (multi-select); empty = all types ("*").</summary>
+    public virtual IList<CredentialTypeEntity> SupportedTypes { get; set; }
+}
+
+/// <summary>Known credential type names — the pick list for a trusted issuer's SupportedTypes.</summary>
+[DefaultClassOptions]
+[System.ComponentModel.DefaultProperty(nameof(Name))]
+public class CredentialTypeEntity : BaseObject
+{
+    public CredentialTypeEntity()
+    {
+        TrustedIssuers = new ObservableCollection<TrustedIssuerEntity>();
+    }
+
+    public virtual string? Name { get; set; }
+    public virtual IList<TrustedIssuerEntity> TrustedIssuers { get; set; }
 }
 
 [DefaultClassOptions]
