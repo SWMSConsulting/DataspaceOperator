@@ -69,8 +69,9 @@ public static class SelfIssuedToken
 
         var doc = await didResolver.ResolveAsync(iss, ct);
         if (doc is null) return null;
-        var key = DidWebResolver.GetKey(doc, jws.Kid);
-        if (key is null || !Jws.Verify(jws, key)) return null;
+        var jwk = DidWebResolver.GetVerificationJwk(doc, jws.Kid);
+        if (jwk is null || !JwkVerifier.Verify(jwk, jws.Algorithm, jws.SigningInput, jws.Signature))
+            return null;
 
         return new VerifiedToken(iss, sub!, aud);
     }

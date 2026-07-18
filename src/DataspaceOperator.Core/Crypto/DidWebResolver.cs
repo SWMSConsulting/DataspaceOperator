@@ -54,6 +54,19 @@ public sealed class DidWebResolver(HttpClient http, bool useHttps = true) : IDid
         return Ed25519Key.FromPublicJwk(vm.PublicKeyJwk);
     }
 
+    /// <summary>
+    /// The raw public JWK for a verification-method id (kid), or the first method. Unlike
+    /// <see cref="GetKey"/> this keeps the original key type (OKP/EC), so callers can verify
+    /// ES256 (P-256) signatures as well as EdDSA — participant wallets sign with P-256.
+    /// </summary>
+    public static System.Text.Json.Nodes.JsonObject? GetVerificationJwk(DidDocument doc, string? kid)
+    {
+        VerificationMethod? vm =
+            (kid is not null ? doc.VerificationMethod.FirstOrDefault(v => v.Id == kid) : null)
+            ?? doc.VerificationMethod.FirstOrDefault();
+        return vm?.PublicKeyJwk;
+    }
+
     public static string? GetCredentialServiceEndpoint(DidDocument doc) =>
         doc.Service.FirstOrDefault(s => s.Type == "CredentialService")?.ServiceEndpoint;
 
