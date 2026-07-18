@@ -1,0 +1,101 @@
+## Image built by the GitHub Actions workflow and pushed to GHCR.
+image:
+  # Set to your GHCR image, e.g. ghcr.io/<owner>/<repo>
+  repository: ghcr.io/OWNER/dataspaceoperator
+  tag: "main"
+  pullPolicy: IfNotPresent
+
+# For a private GHCR package, create a docker-registry secret and reference it here.
+imagePullSecrets: []
+# - name: ghcr-pull
+
+replicaCount: 1   # SQLite is single-writer — keep at 1 (scale out requires an external DB)
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+## The central issuer identity. The private seed is a SECRET.
+issuer:
+  did: "did:web:issuer.localhost"
+  # Base64 Ed25519 seed. Leave empty to auto-generate (unstable DID — dev only).
+  # Provided to the app as env Issuer__PrivateSeedBase64 via the Secret below.
+  privateSeedBase64: ""
+  # Or reference an existing secret instead of managing it here:
+  existingSecret: ""            # secret name
+  existingSecretSeedKey: "issuer-seed"
+
+## XAF security URL signing key (sensitive). Change for production.
+security:
+  urlSigningKey: "CHANGE-ME-URL-SIGNING-KEY"
+
+## Database. Default: SQLite file on a PVC (works with replicaCount=1).
+database:
+  # Full EF Core connection string. {dataDir} is replaced with the mounted data path.
+  connectionString: "EFCoreProvider=SQLite;Data Source={dataDir}/DataspaceOperator.Xaf"
+  # Run "--updateDatabase" in an init container before serving.
+  runMigrationsInitContainer: true
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  mountPath: /app/data
+
+env:
+  ASPNETCORE_ENVIRONMENT: Production
+# extraEnv: []   # additional raw env vars
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: operator.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+podSecurityContext:
+  fsGroup: 1654         # aspnet image non-root group; ensures the PVC is writable
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+## ---------------------------------------------------------------------------
+## HashiCorp Vault (optional). Disabled by default.
+## The app does NOT yet have a native Vault client (only the ISecretStore seam). When enabled,
+## this deploys Vault and adds Agent-Injector annotations that render the issuer seed to a file;
+## turning that into the Issuer__PrivateSeedBase64 env still requires either sourcing the file in
+## the container command or implementing a HashiCorpVaultSecretStore. See README.
+## ---------------------------------------------------------------------------
+vault:
+  enabled: false
+  # Subchart values (only used when enabled). Dev mode is insecure — for evaluation only.
+  server:
+    dev:
+      enabled: true
+  # Agent-injector wiring for our pod (applied only when injector.enabled):
+  injector:
+    enabled: false
+    role: "dataspace-operator"
+    secretPath: "secret/data/dataspace-operator/issuer"
+    seedField: "seed"

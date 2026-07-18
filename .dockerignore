@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.git/
+**/.github/
+helm/
+*.md
+**/DataspaceOperator.Xaf
+**/DataspaceOperator.Xaf-shm
+**/DataspaceOperator.Xaf-wal
+**/*.db

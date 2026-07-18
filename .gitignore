@@ -43,3 +43,6 @@ Thumbs.db
 # SQLite WAL/SHM sidecars
 *-shm
 *-wal
+
+# Helm fetched subcharts (re-fetched via `helm dependency build`)
+helm/**/charts/*.tgz
