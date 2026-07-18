@@ -32,6 +32,14 @@ issuer:
 security:
   urlSigningKey: "CHANGE-ME-URL-SIGNING-KEY"
 
+## Initial admin user, created once on the first DB migration (init container).
+## Production-safe: the admin is only created when a password is set (no empty passwords).
+admin:
+  username: "Admin"
+  password: ""                       # set a strong password (stored in the Secret) to create the admin
+  existingSecret: ""                 # optional: secret name containing the password
+  existingSecretPasswordKey: "admin-password"
+
 ## Database. Default: SQLite file on a PVC (works with replicaCount=1).
 database:
   # Full EF Core connection string. {dataDir} is replaced with the mounted data path.

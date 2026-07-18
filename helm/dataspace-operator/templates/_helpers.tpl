@@ -73,6 +73,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     secretKeyRef:
       name: {{ include "dataspace-operator.fullname" . }}
       key: url-signing-key
+- name: Bootstrap__AdminUserName
+  value: {{ .Values.admin.username | quote }}
+- name: Bootstrap__AdminPassword
+  valueFrom:
+    secretKeyRef:
+      {{- if .Values.admin.existingSecret }}
+      name: {{ .Values.admin.existingSecret }}
+      key: {{ .Values.admin.existingSecretPasswordKey }}
+      {{- else }}
+      name: {{ include "dataspace-operator.fullname" . }}
+      key: admin-password
+      {{- end }}
 {{- if eq (include "dataspace-operator.vaultApp" .) "true" }}
 - name: Vault__Enabled
   value: "true"

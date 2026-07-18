@@ -7,6 +7,7 @@ using DevExpress.ExpressApp.Security;
 using DevExpress.ExpressApp.SystemModule;
 using DevExpress.Persistent.BaseImpl.EF;
 using DevExpress.Persistent.BaseImpl.EF.PermissionPolicy;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using DataspaceOperator.Xaf.Module.BusinessObjects;
 using DataspaceOperator.Core.Domain;
@@ -56,21 +57,35 @@ public class Updater : ModuleUpdater {
         SeedParticipant("Bob AG", "BPNL000000000002", "did:web:bob-ih%3A7083:bob");
         ObjectSpace.CommitChanges();
 
-        // --- Security: roles + users (dev only; empty passwords for local testing) ---
-#if !RELEASE
+        // --- Security: roles are always created ---
         var defaultRole = CreateDefaultRole();
         var adminRole = CreateAdminRole();
         ObjectSpace.CommitChanges();
 
         var userManager = ObjectSpace.ServiceProvider.GetRequiredService<UserManager>();
+
+        // Production-safe bootstrap: create the initial admin ONCE from configuration, only when a
+        // password is provided (env Bootstrap__AdminPassword, from a Secret). No empty passwords.
+        var config = ObjectSpace.ServiceProvider.GetService<IConfiguration>();
+        var bootstrapUser = config?["Bootstrap:AdminUserName"];
+        if(string.IsNullOrWhiteSpace(bootstrapUser)) bootstrapUser = "Admin";
+        var bootstrapPassword = config?["Bootstrap:AdminPassword"];
+        if(!string.IsNullOrEmpty(bootstrapPassword) &&
+           userManager.FindUserByName<ApplicationUser>(ObjectSpace, bootstrapUser) == null) {
+            _ = userManager.CreateUser<ApplicationUser>(ObjectSpace, bootstrapUser, bootstrapPassword,
+                user => user.Roles.Add(adminRole));
+        }
+
+#if !RELEASE
+        // Local dev convenience: Admin/User with empty passwords (compiled out in Release).
         if(userManager.FindUserByName<ApplicationUser>(ObjectSpace, "Admin") == null) {
             _ = userManager.CreateUser<ApplicationUser>(ObjectSpace, "Admin", "", user => user.Roles.Add(adminRole));
         }
         if(userManager.FindUserByName<ApplicationUser>(ObjectSpace, "User") == null) {
             _ = userManager.CreateUser<ApplicationUser>(ObjectSpace, "User", "", user => user.Roles.Add(defaultRole));
         }
-        ObjectSpace.CommitChanges();
 #endif
+        ObjectSpace.CommitChanges();
 
         void SeedDefinition(string type, string? contextUrl, string template) {
             var d = ObjectSpace.FirstOrDefault<CredentialDefinitionEntity>(x => x.CredentialType == type);
