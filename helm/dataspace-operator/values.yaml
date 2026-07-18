@@ -1,7 +1,7 @@
 ## Image built by the GitHub Actions workflow and pushed to GHCR.
 image:
-  # Set to your GHCR image, e.g. ghcr.io/<owner>/<repo>
-  repository: ghcr.io/OWNER/dataspaceoperator
+  repository: ghcr.io/swmsconsulting/dataspaceoperator
+  # Moving branch tag; pin to an immutable digest/sha for production, e.g. "sha-88cf4f5".
   tag: "main"
   pullPolicy: IfNotPresent
 

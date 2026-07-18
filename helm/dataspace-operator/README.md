@@ -39,7 +39,7 @@ Push to `main` (or tag `v*`) to trigger the build. Make the GHCR package accessi
 cd helm/dataspace-operator
 helm dependency build          # fetches the (optional) vault subchart
 helm install operator . \
-  --set image.repository=ghcr.io/<owner>/<repo> \
+  --set image.repository=ghcr.io/swmsconsulting/dataspaceoperator \
   --set image.tag=main \
   --set issuer.did=did:web:issuer.example.org \
   --set issuer.privateSeedBase64=$(openssl rand -base64 32) \
