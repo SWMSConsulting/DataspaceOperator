@@ -57,5 +57,20 @@ public sealed class DidWebResolver(HttpClient http, bool useHttps = true) : IDid
     public static string? GetCredentialServiceEndpoint(DidDocument doc) =>
         doc.Service.FirstOrDefault(s => s.Type == "CredentialService")?.ServiceEndpoint;
 
+    /// <summary>
+    /// The public origin (scheme://host[:port]) of a did:web identifier — e.g.
+    /// <c>did:web:auth-windx.cluster.swms-cloud.com</c> -> <c>https://auth-windx.cluster.swms-cloud.com</c>.
+    /// Used to advertise our own protocol endpoints: behind an HTTPS reverse proxy the app never sees
+    /// the public scheme/host, so we derive it from our DID instead of the request context.
+    /// </summary>
+    public static string DidWebToOrigin(string did, bool useHttps = true)
+    {
+        const string prefix = "did:web:";
+        if (!did.StartsWith(prefix, StringComparison.Ordinal))
+            throw new NotSupportedException($"Only did:web is supported, got '{did}'.");
+        var host = Uri.UnescapeDataString(did[prefix.Length..].Split(':')[0]);
+        return $"{(useHttps ? "https" : "http")}://{host}";
+    }
+
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 }

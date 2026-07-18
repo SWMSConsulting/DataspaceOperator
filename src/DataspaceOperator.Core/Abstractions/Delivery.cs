@@ -16,5 +16,12 @@ public sealed record DeliveryResult(bool Success, string? Endpoint, string? Erro
 /// </summary>
 public interface ICredentialDeliveryService
 {
-    Task<DeliveryResult> DeliverAsync(string holderDid, IReadOnlyList<CredentialToDeliver> credentials, CancellationToken ct = default);
+    /// <summary>
+    /// Deliver a DCP <c>CredentialMessage</c> to the holder's CredentialService storage endpoint.
+    /// <paramref name="holderPid"/>/<paramref name="issuerPid"/> correlate the delivery to the
+    /// holder-initiated credential request (the IdentityHub storage API requires both).
+    /// </summary>
+    Task<DeliveryResult> DeliverAsync(
+        string holderDid, IReadOnlyList<CredentialToDeliver> credentials,
+        string issuerPid, string holderPid, CancellationToken ct = default);
 }

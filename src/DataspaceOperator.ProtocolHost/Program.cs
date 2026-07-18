@@ -34,6 +34,7 @@ builder.Services.AddSingleton<DidDocumentBuilder>();
 builder.Services.AddSingleton<BdrsDirectoryService>();
 builder.Services.AddSingleton<IssuerMetadata>();
 builder.Services.AddSingleton<DcpIssuanceService>();
+builder.Services.AddSingleton<IssuanceRequestTracker>();
 builder.Services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
 builder.Services.AddSingleton<WalletSink>();
 builder.Services.AddSingleton(sp =>

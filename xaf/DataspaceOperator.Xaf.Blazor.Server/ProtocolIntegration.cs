@@ -45,19 +45,27 @@ public static class ProtocolIntegration
         services.AddScoped<VpVerifier>();
         services.AddScoped<BdrsDirectoryService>();
         services.AddScoped<DcpIssuanceService>();
+        // Tracks holder-initiated DCP requests (issuerPid <-> holderPid) across the async delivery.
+        services.AddSingleton<IssuanceRequestTracker>();
         return services;
     }
 }
 
-/// <summary>Resolves our own issuer DID locally; everything else via did:web over HTTP.</summary>
+/// <summary>
+/// Resolves our own issuer DID locally; every other did:web over HTTPS. did:web mandates HTTPS, and
+/// participant wallets sit behind the same HTTPS reverse proxy, so plain HTTP is never used here.
+/// </summary>
 public sealed class OperatorDidResolver(IIssuerSigner signer, DidDocumentBuilder builder, IHttpClientFactory httpFactory)
     : IDidResolver
 {
     public Task<DidDocument?> ResolveAsync(string did, CancellationToken ct = default)
     {
         if (string.Equals(did, signer.IssuerDid, StringComparison.Ordinal))
-            return Task.FromResult<DidDocument?>(builder.BuildIssuerDocument());
-        var http = new DidWebResolver(httpFactory.CreateClient(), useHttps: false);
+        {
+            var issuerService = DidWebResolver.DidWebToOrigin(signer.IssuerDid) + "/api/issuance";
+            return Task.FromResult<DidDocument?>(builder.BuildIssuerDocument(issuerService));
+        }
+        var http = new DidWebResolver(httpFactory.CreateClient(), useHttps: true);
         return http.ResolveAsync(did, ct);
     }
 }

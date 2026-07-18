@@ -7,18 +7,23 @@ namespace DataspaceOperator.Core.Protocol;
 
 /// <summary>
 /// DCP credential delivery over HTTP: resolves the holder's CredentialService endpoint from its
-/// DID document and POSTs a DCP CredentialMessage, authenticated with an issuer self-issued token.
+/// DID document and POSTs a DCP <c>CredentialMessage</c>, authenticated with an issuer self-issued
+/// token (aud = holder DID).
 ///
-/// NOTE: the exact CredentialMessage schema + token semantics depend on the target wallet's
-/// contract — align via live-capture against the concrete wallet (see the concept docs).
+/// Body shape (matched against the eclipse-edc IdentityHub Storage API): the message MUST carry
+/// <c>issuerPid</c>, <c>holderPid</c> and <c>status:"ISSUED"</c>, and each credential's
+/// <c>format</c> must map to a known <c>CredentialFormat</c> (we use the enum name <c>VC1_0_JWT</c>).
 /// </summary>
 public sealed class HttpCredentialDeliveryService(
     IDidResolver didResolver,
     IIssuerSigner signer,
     HttpClient http) : ICredentialDeliveryService
 {
+    public const string Format = "VC1_0_JWT";
+
     public async Task<DeliveryResult> DeliverAsync(
-        string holderDid, IReadOnlyList<CredentialToDeliver> credentials, CancellationToken ct = default)
+        string holderDid, IReadOnlyList<CredentialToDeliver> credentials,
+        string issuerPid, string holderPid, CancellationToken ct = default)
     {
         var doc = await didResolver.ResolveAsync(holderDid, ct);
         if (doc is null) return DeliveryResult.Fail(null, $"cannot resolve holder DID '{holderDid}'");
@@ -31,46 +36,36 @@ public sealed class HttpCredentialDeliveryService(
 
         var creds = new JsonArray();
         foreach (var c in credentials)
-            creds.Add(new JsonObject { ["credentialType"] = c.CredentialType, ["payload"] = c.Jwt, ["format"] = "vc1_0_jwt" });
+            creds.Add(new JsonObject { ["credentialType"] = c.CredentialType, ["payload"] = c.Jwt, ["format"] = Format });
 
         var message = new JsonObject
         {
             ["@context"] = new JsonArray { "https://w3id.org/dspace-dcp/v1.0/dcp.jsonld" },
             ["type"] = "CredentialMessage",
+            ["issuerPid"] = issuerPid,
+            ["holderPid"] = holderPid,
+            ["status"] = "ISSUED",
             ["credentials"] = creds,
         };
+
+        var token = await SelfIssuedToken.IssueAsync(signer, holderDid, ct: ct);
 
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(message.ToJsonString(), Encoding.UTF8, "application/json"),
         };
-        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + await IssueSelfTokenAsync(holderDid, ct));
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + token);
 
         try
         {
             using var response = await http.SendAsync(request, ct);
-            return response.IsSuccessStatusCode
-                ? DeliveryResult.Ok(url)
-                : DeliveryResult.Fail(url, $"HTTP {(int)response.StatusCode}");
+            if (response.IsSuccessStatusCode) return DeliveryResult.Ok(url);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return DeliveryResult.Fail(url, $"HTTP {(int)response.StatusCode}: {body}");
         }
         catch (Exception ex)
         {
             return DeliveryResult.Fail(url, ex.Message);
         }
-    }
-
-    private Task<string> IssueSelfTokenAsync(string audience, CancellationToken ct)
-    {
-        var now = DateTimeOffset.UtcNow;
-        var header = new JsonObject { ["typ"] = "JWT" };
-        var payload = new JsonObject
-        {
-            ["iss"] = signer.IssuerDid,
-            ["sub"] = signer.IssuerDid,
-            ["aud"] = audience,
-            ["iat"] = now.ToUnixTimeSeconds(),
-            ["exp"] = now.AddMinutes(5).ToUnixTimeSeconds(),
-        };
-        return Jws.SignAsync(header, payload, signer, ct);
     }
 }

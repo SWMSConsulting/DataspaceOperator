@@ -21,7 +21,66 @@ public sealed class DcpIssuanceService(
 {
     public sealed record IssuedResult(string CredentialType, string Jwt, Guid Id, DeliveryStatus Delivery);
 
+    /// <summary>
+    /// Issuer-initiated issue: sign the VC, record it, and (best-effort) push it to the holder wallet.
+    /// NOTE: a raw push has no matching holder request, so real tractusx wallets reject the delivery —
+    /// use <see cref="IssueForRequestAsync"/> for the holder-initiated DCP flow. Kept for the local
+    /// demo host and for recording an operator-issued credential.
+    /// </summary>
     public async Task<IssuedResult> IssueAsync(string holderDid, string credentialType, CancellationToken ct = default)
+    {
+        var (jwt, index, validity) = await BuildVcAsync(holderDid, credentialType, ct);
+
+        var deliveryStatus = DeliveryStatus.NotAttempted;
+        DateTimeOffset? deliveredUtc = null;
+        if (delivery is not null)
+        {
+            // Push has no holderPid/issuerPid correlation; pass empty ids (demo/local only).
+            var res = await delivery.DeliverAsync(holderDid, [new CredentialToDeliver(credentialType, jwt)], "", "", ct);
+            deliveryStatus = res.Success ? DeliveryStatus.Delivered : DeliveryStatus.Failed;
+            if (res.Success) deliveredUtc = DateTimeOffset.UtcNow;
+        }
+
+        var storedId = await RecordAsync(holderDid, credentialType, jwt, index, validity, deliveryStatus, deliveredUtc, ct);
+        return new IssuedResult(credentialType, jwt, storedId, deliveryStatus);
+    }
+
+    /// <summary>
+    /// Holder-initiated DCP flow: issue the requested credential and deliver a correlated
+    /// <c>CredentialMessage</c> (issuerPid/holderPid) to the holder's CredentialService. Delivery is
+    /// retried briefly because the holder only accepts the credential once its own request has
+    /// transitioned to REQUESTED (a small race after it receives our request response).
+    /// </summary>
+    public async Task<IssuedResult> IssueForRequestAsync(
+        string holderDid, string credentialType, string holderPid, string issuerPid, CancellationToken ct = default)
+    {
+        var (jwt, index, validity) = await BuildVcAsync(holderDid, credentialType, ct);
+
+        DeliveryResult? last = null;
+        var deliveryStatus = DeliveryStatus.Failed;
+        DateTimeOffset? deliveredUtc = null;
+        if (delivery is not null)
+        {
+            // brief settle so the holder finishes transitioning its request to REQUESTED
+            await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
+            for (var attempt = 0; attempt < 6; attempt++)
+            {
+                last = await delivery.DeliverAsync(
+                    holderDid, [new CredentialToDeliver(credentialType, jwt)], issuerPid, holderPid, ct);
+                if (last.Success) { deliveryStatus = DeliveryStatus.Delivered; deliveredUtc = DateTimeOffset.UtcNow; break; }
+                await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
+            }
+        }
+
+        var storedId = await RecordAsync(holderDid, credentialType, jwt, index, validity, deliveryStatus, deliveredUtc, ct);
+        if (deliveryStatus != DeliveryStatus.Delivered && last is not null)
+            throw new InvalidOperationException($"delivery failed: {last.Error}");
+        return new IssuedResult(credentialType, jwt, storedId, deliveryStatus);
+    }
+
+    /// <summary>Sign a JWT-VC for the holder using the data-driven definition (or a built-in fallback).</summary>
+    private async Task<(string Jwt, int Index, TimeSpan Validity)> BuildVcAsync(
+        string holderDid, string credentialType, CancellationToken ct)
     {
         var participant = await participants.GetByDidAsync(holderDid, ct)
             ?? throw new InvalidOperationException($"Unknown participant '{holderDid}'.");
@@ -55,17 +114,13 @@ public sealed class DcpIssuanceService(
             credentialStatus: status,
             additionalContexts: contextUrl is null ? null : [contextUrl],
             ct: ct);
+        return (jwt, index, validity);
+    }
 
-        // Deliver to the holder's own wallet (CredentialService, discovered from its DID). Best-effort.
-        var deliveryStatus = DeliveryStatus.NotAttempted;
-        DateTimeOffset? deliveredUtc = null;
-        if (delivery is not null)
-        {
-            var res = await delivery.DeliverAsync(holderDid, [new CredentialToDeliver(credentialType, jwt)], ct);
-            deliveryStatus = res.Success ? DeliveryStatus.Delivered : DeliveryStatus.Failed;
-            if (res.Success) deliveredUtc = DateTimeOffset.UtcNow;
-        }
-
+    private async Task<Guid> RecordAsync(
+        string holderDid, string credentialType, string jwt, int index, TimeSpan validity,
+        DeliveryStatus deliveryStatus, DateTimeOffset? deliveredUtc, CancellationToken ct)
+    {
         var record = new IssuedCredential
         {
             HolderDid = holderDid,
@@ -78,8 +133,7 @@ public sealed class DcpIssuanceService(
             DeliveryStatus = deliveryStatus,
             DeliveredUtc = deliveredUtc,
         };
-        var storedId = await credentials.AddAsync(record, ct);
-        return new IssuedResult(credentialType, jwt, storedId, deliveryStatus);
+        return await credentials.AddAsync(record, ct);
     }
 
     /// <summary>Revoke a credential: flip the status-list bit and mark the record.</summary>

@@ -4,27 +4,40 @@ using DataspaceOperator.Core.Abstractions;
 namespace DataspaceOperator.Core.Protocol;
 
 /// <summary>
-/// Issuer Metadata for DCP issuance. The wallet reads this to discover our endpoints —
-/// which means WE choose the paths; only the message formats + this metadata are the contract.
+/// DCP Issuer Metadata. A holder wallet reads this to discover the credentials we offer. The
+/// <c>credentialsSupported</c> entries are DCP <c>CredentialObject</c>s; their <c>id</c> is what a
+/// holder references in a <c>CredentialRequestMessage</c>. We use <c>id == credentialType</c> so the
+/// issuer can map a requested id straight back to the credential type to issue.
 /// </summary>
 public sealed class IssuerMetadata(IIssuerSigner signer)
 {
-    public JsonObject Build(string baseUrl) => new()
-    {
-        ["credentialIssuer"] = signer.IssuerDid,
-        ["credentialEndpoint"] = $"{baseUrl}/api/issuance/credentials",
-        ["credentialRequestStatusEndpoint"] = $"{baseUrl}/api/issuance/requests",
-        ["statusListEndpoint"] = $"{baseUrl}/status-lists/revocation",
-        ["credentialsSupported"] = new JsonArray
-        {
-            Supported("MembershipCredential"),
-            Supported("DataExchangeGovernanceCredential"),
-        },
-    };
+    /// <summary>Credential types we can issue (id == type). Keep in sync with the trusted-issuer setup.</summary>
+    public static readonly string[] SupportedTypes = ["MembershipCredential", "DataExchangeGovernanceCredential"];
 
-    private static JsonObject Supported(string type) => new()
+    // eclipse-edc CredentialProfile: "vc11-sl2021/jwt" maps to CredentialFormat.VC1_0_JWT.
+    public const string Profile = "vc11-sl2021/jwt";
+
+    public JsonObject Build(string baseUrl)
     {
-        ["type"] = new JsonArray { "VerifiableCredential", type },
-        ["format"] = "VC1_0_JWT",
+        var supported = new JsonArray();
+        foreach (var type in SupportedTypes) supported.Add(CredentialObject(type));
+        return new JsonObject
+        {
+            ["@context"] = new JsonArray { "https://w3id.org/dspace-dcp/v1.0/dcp.jsonld" },
+            ["type"] = "IssuerMetadata",
+            ["issuer"] = signer.IssuerDid,
+            ["credentialsSupported"] = supported,
+        };
+    }
+
+    public static string CredentialObjectId(string credentialType) => credentialType;
+
+    private static JsonObject CredentialObject(string credentialType) => new()
+    {
+        ["id"] = CredentialObjectId(credentialType),
+        ["type"] = "CredentialObject",
+        ["credentialType"] = credentialType,
+        ["bindingMethods"] = new JsonArray { "did:web" },
+        ["profile"] = Profile,
     };
 }
