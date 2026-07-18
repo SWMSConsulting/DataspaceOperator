@@ -18,6 +18,10 @@ RUN dotnet publish xaf/DataspaceOperator.Xaf.Blazor.Server/DataspaceOperator.Xaf
     -c ${BUILD_CONFIGURATION} -o /app/publish --no-restore -p:UseSharedCompilation=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
+# Native deps for DevExpress.Drawing.Skia (SkiaSharp): libfontconfig + freetype.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfontconfig1 libfreetype6 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish ./
 RUN mkdir -p /app/data
