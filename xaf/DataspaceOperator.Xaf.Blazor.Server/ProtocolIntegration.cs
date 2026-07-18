@@ -41,6 +41,7 @@ public static class ProtocolIntegration
         services.AddScoped<ICredentialDefinitionStore, XafCredentialDefinitionStore>();
         services.AddScoped<ICredentialStore, XafCredentialStore>();
         services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
+        services.AddHttpClient<ICredentialOfferService, HttpCredentialOfferService>();
 
         services.AddScoped<VpVerifier>();
         services.AddScoped<BdrsDirectoryService>();

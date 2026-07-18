@@ -81,6 +81,19 @@ public static class ProtocolEndpoints
         app.MapGet("/api/issuance/.well-known/vci", (IssuerMetadata meta, IIssuerSigner signer) =>
             Results.Json(meta.Build(DidWebResolver.DidWebToOrigin(signer.IssuerDid))));
 
+        // Operator trigger (issuer-initiated): POST a CredentialOffer to the holder wallet, which
+        // makes the holder auto-initiate the DCP request back to us. This is what the "Issue
+        // Membership Credential" UI action drives; exposed here so issuance can also be kicked off
+        // by an operator over HTTP.
+        app.MapPost("/api/issuance/offer", async (
+            string holderDid, string? type, ICredentialOfferService offers, CancellationToken ct) =>
+        {
+            var res = await offers.SendOfferAsync(holderDid, type ?? "MembershipCredential", ct);
+            return res.Success
+                ? Results.Ok(new { offered = holderDid, endpoint = res.Endpoint })
+                : Results.Json(new { error = res.Error, endpoint = res.Endpoint }, statusCode: 502);
+        });
+
         // Credential Request (holder wallet -> issuer).
         app.MapPost("/api/issuance/credentials", async (
             HttpContext ctx, IServiceScopeFactory scopeFactory,

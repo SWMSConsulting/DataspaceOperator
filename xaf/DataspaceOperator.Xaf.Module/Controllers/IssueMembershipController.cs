@@ -2,8 +2,7 @@ using DevExpress.ExpressApp;
 using DevExpress.ExpressApp.Actions;
 using DevExpress.Persistent.Base;
 using Microsoft.Extensions.DependencyInjection;
-using DataspaceOperator.Core.Domain;
-using DataspaceOperator.Core.Protocol;
+using DataspaceOperator.Core.Abstractions;
 using DataspaceOperator.Xaf.Module.BusinessObjects;
 
 namespace DataspaceOperator.Xaf.Module.Controllers;
@@ -41,24 +40,24 @@ public class IssueMembershipController : ViewController
         var did = participant.Did;
         try
         {
-            // Offload to the thread pool: avoids a sync-over-async deadlock on the Blazor circuit
-            // (issuance awaits HTTP delivery + EF). The scope is kept alive until issuance completes.
+            // Real DCP issuance is holder-initiated: we send a CredentialOffer to the participant's
+            // wallet, which then auto-requests the credential from our IssuerService, and we deliver
+            // a correlated CredentialMessage. Offloaded to the thread pool to avoid a sync-over-async
+            // deadlock on the Blazor circuit.
             var result = Task.Run(async () =>
             {
                 using var scope = appServices.CreateScope();
-                var issuance = scope.ServiceProvider.GetRequiredService<DcpIssuanceService>();
-                return await issuance.IssueAsync(did, "MembershipCredential");
+                var offers = scope.ServiceProvider.GetRequiredService<ICredentialOfferService>();
+                return await offers.SendOfferAsync(did, "MembershipCredential");
             }).GetAwaiter().GetResult();
 
-            ObjectSpace.Refresh();
-
-            // Delivery is best-effort: the holder's own wallet may be unreachable from here.
-            var note = result.Delivery == DeliveryStatus.Delivered
-                ? "delivered to the holder's wallet"
-                : $"stored (delivery: {result.Delivery} — holder wallet not reachable)";
-            Application.ShowViewStrategy.ShowMessage(
-                $"Issued {result.CredentialType} for {participant.Name}; {note}.",
-                InformationType.Success);
+            if (result.Success)
+                Application.ShowViewStrategy.ShowMessage(
+                    $"Sent MembershipCredential offer to {participant.Name}'s wallet. The wallet will " +
+                    "request and store the credential via DCP.", InformationType.Success);
+            else
+                Application.ShowViewStrategy.ShowMessage(
+                    $"Offer failed: {result.Error}", InformationType.Error);
         }
         catch (Exception ex)
         {

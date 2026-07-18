@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IssuerMetadata>();
 builder.Services.AddSingleton<DcpIssuanceService>();
 builder.Services.AddSingleton<IssuanceRequestTracker>();
 builder.Services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
+builder.Services.AddHttpClient<ICredentialOfferService, HttpCredentialOfferService>();
 builder.Services.AddSingleton<WalletSink>();
 builder.Services.AddSingleton(sp =>
     new StatusListService(sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(), $"{issuerDid}/status-lists/revocation"));
