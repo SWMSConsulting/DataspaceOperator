@@ -44,14 +44,24 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Values.database.connectionString | replace "{dataDir}" .Values.persistence.mountPath -}}
 {{- end -}}
 
-{{/* True when the app should read the issuer seed natively from Vault. */}}
+{{/* Vault seed read (KV). */}}
 {{- define "dataspace-operator.vaultApp" -}}
 {{- and .Values.vault.enabled .Values.vault.app.enabled -}}
 {{- end -}}
 
+{{/* Vault Transit signing (key never leaves Vault). */}}
+{{- define "dataspace-operator.vaultTransit" -}}
+{{- and .Values.vault.enabled .Values.vault.transit.enabled -}}
+{{- end -}}
+
+{{/* True when Vault supplies the issuer key (KV or Transit) — then no K8s Secret seed is mounted. */}}
+{{- define "dataspace-operator.vaultManaged" -}}
+{{- or (eq (include "dataspace-operator.vaultApp" .) "true") (eq (include "dataspace-operator.vaultTransit" .) "true") -}}
+{{- end -}}
+
 {{/* Secret-backed + Vault env vars for the app + migration init container. */}}
 {{- define "dataspace-operator.appSecretsEnv" -}}
-{{- if not (eq (include "dataspace-operator.vaultApp" .) "true") }}
+{{- if ne (include "dataspace-operator.vaultManaged" .) "true" }}
 - name: Issuer__PrivateSeedBase64
   valueFrom:
     secretKeyRef:
@@ -84,5 +94,25 @@ app.kubernetes.io/instance: {{ .Release.Name }}
   value: {{ .Values.vault.app.secretPath | quote }}
 - name: Vault__SeedField
   value: {{ .Values.vault.app.seedField | quote }}
+{{- end }}
+{{- if eq (include "dataspace-operator.vaultTransit" .) "true" }}
+- name: Vault__Transit__Enabled
+  value: "true"
+- name: Vault__Transit__Address
+  value: {{ .Values.vault.transit.address | quote }}
+{{- with .Values.vault.transit.token }}
+- name: Vault__Transit__Token
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.vault.transit.kubernetesRole }}
+- name: Vault__Transit__KubernetesRole
+  value: {{ . | quote }}
+{{- end }}
+- name: Vault__Transit__KubernetesAuthMount
+  value: {{ .Values.vault.transit.kubernetesAuthMount | quote }}
+- name: Vault__Transit__Mount
+  value: {{ .Values.vault.transit.mount | quote }}
+- name: Vault__Transit__KeyName
+  value: {{ .Values.vault.transit.keyName | quote }}
 {{- end }}
 {{- end -}}

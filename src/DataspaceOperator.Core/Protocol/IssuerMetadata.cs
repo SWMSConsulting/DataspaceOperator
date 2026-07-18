@@ -7,11 +7,11 @@ namespace DataspaceOperator.Core.Protocol;
 /// Issuer Metadata for DCP issuance. The wallet reads this to discover our endpoints —
 /// which means WE choose the paths; only the message formats + this metadata are the contract.
 /// </summary>
-public sealed class IssuerMetadata(IIssuerKeyProvider keys)
+public sealed class IssuerMetadata(IIssuerSigner signer)
 {
     public JsonObject Build(string baseUrl) => new()
     {
-        ["credentialIssuer"] = keys.IssuerDid,
+        ["credentialIssuer"] = signer.IssuerDid,
         ["credentialEndpoint"] = $"{baseUrl}/api/issuance/credentials",
         ["credentialRequestStatusEndpoint"] = $"{baseUrl}/api/issuance/requests",
         ["statusListEndpoint"] = $"{baseUrl}/status-lists/revocation",

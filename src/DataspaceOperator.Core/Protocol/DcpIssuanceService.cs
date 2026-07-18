@@ -12,7 +12,7 @@ namespace DataspaceOperator.Core.Protocol;
 /// definition and no store are available, so the demo host keeps working.
 /// </summary>
 public sealed class DcpIssuanceService(
-    IIssuerKeyProvider keys,
+    IIssuerSigner signer,
     IParticipantStore participants,
     ICredentialStore credentials,
     StatusListService statusList,
@@ -46,14 +46,15 @@ public sealed class DcpIssuanceService(
 
         var index = await statusList.AllocateAsync(ct);
         var status = statusList.StatusEntryFor(index);
-        var jwt = VerifiableCredentials.IssueJwtVc(
-            keys.SigningKey, keys.IssuerDid, keys.KeyId,
+        var jwt = await VerifiableCredentials.IssueJwtVcAsync(
+            signer,
             subjectDid: holderDid,
             types: [credentialType],
             credentialSubjectClaims: claims,
             validity: validity,
             credentialStatus: status,
-            additionalContexts: contextUrl is null ? null : [contextUrl]);
+            additionalContexts: contextUrl is null ? null : [contextUrl],
+            ct: ct);
 
         // Deliver to the holder's own wallet (CredentialService, discovered from its DID). Best-effort.
         var deliveryStatus = DeliveryStatus.NotAttempted;

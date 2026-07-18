@@ -10,7 +10,7 @@ namespace DataspaceOperator.Core.Protocol;
 /// allocations and revocations survive restarts. Each issued credential gets an index; revoking
 /// sets the bit. Verifiers fetch the signed StatusList credential and check the bit.
 /// </summary>
-public sealed class StatusListService(IIssuerKeyProvider keys, IStatusListStore store, string statusListUrl)
+public sealed class StatusListService(IIssuerSigner signer, IStatusListStore store, string statusListUrl)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -74,13 +74,14 @@ public sealed class StatusListService(IIssuerKeyProvider keys, IStatusListStore 
             ["statusPurpose"] = "revocation",
             ["encodedList"] = encodedList,
         };
-        return VerifiableCredentials.IssueJwtVc(
-            keys.SigningKey, keys.IssuerDid, keys.KeyId,
+        return await VerifiableCredentials.IssueJwtVcAsync(
+            signer,
             subjectDid: statusListUrl,
             types: ["BitstringStatusListCredential"],
             credentialSubjectClaims: subject,
             validity: TimeSpan.FromDays(1),
-            credentialId: statusListUrl);
+            credentialId: statusListUrl,
+            ct: ct);
     }
 
     private static void SetBit(StatusListState s, int index, bool value)

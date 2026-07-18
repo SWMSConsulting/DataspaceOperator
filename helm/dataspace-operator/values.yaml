@@ -92,7 +92,7 @@ vault:
   server:
     dev:
       enabled: true
-  # Native app integration: the app reads the issuer seed from Vault at startup.
+  # Native KV integration: the app reads the issuer seed from Vault KV at startup.
   app:
     enabled: false
     address: "http://vault:8200"
@@ -104,3 +104,12 @@ vault:
     kvMount: "secret"
     secretPath: "dataspace-operator/issuer"
     seedField: "seed"
+  # Vault Transit signing: the issuer PRIVATE KEY never leaves Vault (strongest option).
+  transit:
+    enabled: false
+    address: "http://vault:8200"
+    token: ""
+    kubernetesRole: ""
+    kubernetesAuthMount: "kubernetes"
+    mount: "transit"
+    keyName: "dataspace-issuer"

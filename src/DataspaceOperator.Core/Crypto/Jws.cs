@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DataspaceOperator.Core.Abstractions;
 
 namespace DataspaceOperator.Core.Crypto;
 
@@ -23,6 +24,18 @@ public static class Jws
         var p = Base64Url.Encode(payload.ToJsonString());
         var signingInput = $"{h}.{p}";
         var sig = key.Sign(Encoding.ASCII.GetBytes(signingInput));
+        return $"{signingInput}.{Base64Url.Encode(sig)}";
+    }
+
+    /// <summary>Sign via an <see cref="IIssuerSigner"/> (local or remote, e.g. Vault Transit).</summary>
+    public static async Task<string> SignAsync(JsonObject header, JsonObject payload, IIssuerSigner signer, CancellationToken ct = default)
+    {
+        header["alg"] = "EdDSA";
+        header["kid"] = signer.KeyId;
+        var h = Base64Url.Encode(header.ToJsonString());
+        var p = Base64Url.Encode(payload.ToJsonString());
+        var signingInput = $"{h}.{p}";
+        var sig = await signer.SignAsync(Encoding.ASCII.GetBytes(signingInput), ct);
         return $"{signingInput}.{Base64Url.Encode(sig)}";
     }
 

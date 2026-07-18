@@ -31,14 +31,25 @@ public sealed record VaultOptions
 /// </summary>
 public sealed class HashiCorpVaultSecretStore(HttpClient http, VaultOptions options) : ISecretStore
 {
+    private VaultConnection Connection => new()
+    {
+        Address = options.Address,
+        Token = options.Token,
+        KubernetesRole = options.KubernetesRole,
+        KubernetesAuthMount = options.KubernetesAuthMount,
+        ServiceAccountTokenPath = options.ServiceAccountTokenPath,
+        Namespace = options.Namespace,
+    };
+
     public async Task<string?> GetSecretAsync(string name, CancellationToken ct = default)
     {
-        var token = await GetTokenAsync(ct);
-        var url = $"{options.Address.TrimEnd('/')}/v1/{options.KvMount}/data/{options.SecretPath}";
+        var conn = Connection;
+        var token = await VaultAuth.GetTokenAsync(http, conn, ct);
+        var url = $"{conn.BaseUrl}/v1/{options.KvMount}/data/{options.SecretPath}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.TryAddWithoutValidation("X-Vault-Token", token);
-        AddNamespace(request);
+        VaultAuth.AddNamespace(request, conn);
 
         using var response = await http.SendAsync(request, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
@@ -57,38 +68,5 @@ public sealed class HashiCorpVaultSecretStore(HttpClient http, VaultOptions opti
             return field.GetString();
         }
         return null;
-    }
-
-    private async Task<string> GetTokenAsync(CancellationToken ct)
-    {
-        if (!string.IsNullOrEmpty(options.Token)) return options.Token!;
-
-        if (string.IsNullOrEmpty(options.KubernetesRole))
-            throw new InvalidOperationException("Vault: neither a static token nor a Kubernetes role is configured.");
-
-        var jwt = (await File.ReadAllTextAsync(options.ServiceAccountTokenPath, ct)).Trim();
-        var loginUrl = $"{options.Address.TrimEnd('/')}/v1/auth/{options.KubernetesAuthMount}/login";
-        var body = new JsonObject { ["role"] = options.KubernetesRole, ["jwt"] = jwt };
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, loginUrl)
-        {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
-        };
-        AddNamespace(request);
-
-        using var response = await http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Vault Kubernetes login failed ({(int)response.StatusCode}).");
-
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-        return doc.RootElement.GetProperty("auth").GetProperty("client_token").GetString()
-            ?? throw new InvalidOperationException("Vault login response had no client_token.");
-    }
-
-    private void AddNamespace(HttpRequestMessage request)
-    {
-        if (!string.IsNullOrEmpty(options.Namespace))
-            request.Headers.TryAddWithoutValidation("X-Vault-Namespace", options.Namespace);
     }
 }

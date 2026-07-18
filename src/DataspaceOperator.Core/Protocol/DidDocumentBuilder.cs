@@ -4,7 +4,7 @@ using DataspaceOperator.Core.Domain;
 namespace DataspaceOperator.Core.Protocol;
 
 /// <summary>Builds this operator's issuer DID document (served at /.well-known/did.json).</summary>
-public sealed class DidDocumentBuilder(IIssuerKeyProvider keys)
+public sealed class DidDocumentBuilder(IIssuerSigner signer)
 {
     public DidDocument BuildIssuerDocument(string? credentialServiceUrl = null)
     {
@@ -15,25 +15,25 @@ public sealed class DidDocumentBuilder(IIssuerKeyProvider keys)
                 "https://www.w3.org/ns/did/v1",
                 "https://w3id.org/security/suites/jws-2020/v1",
             },
-            Id = keys.IssuerDid,
+            Id = signer.IssuerDid,
             VerificationMethod =
             [
                 new VerificationMethod
                 {
-                    Id = keys.KeyId,
+                    Id = signer.KeyId,
                     Type = "JsonWebKey2020",
-                    Controller = keys.IssuerDid,
-                    PublicKeyJwk = keys.SigningKey.ToPublicJwk(),
+                    Controller = signer.IssuerDid,
+                    PublicKeyJwk = (System.Text.Json.Nodes.JsonObject)signer.PublicJwk.DeepClone(),
                 }
             ],
-            Authentication = [keys.KeyId],
-            AssertionMethod = [keys.KeyId],
+            Authentication = [signer.KeyId],
+            AssertionMethod = [signer.KeyId],
         };
         if (credentialServiceUrl is not null)
         {
             doc.Service.Add(new DidService
             {
-                Id = $"{keys.IssuerDid}#issuer-service",
+                Id = $"{signer.IssuerDid}#issuer-service",
                 Type = "IssuerService",
                 ServiceEndpoint = credentialServiceUrl,
             });

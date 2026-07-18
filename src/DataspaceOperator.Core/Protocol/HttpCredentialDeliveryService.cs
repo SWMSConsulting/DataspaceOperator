@@ -14,7 +14,7 @@ namespace DataspaceOperator.Core.Protocol;
 /// </summary>
 public sealed class HttpCredentialDeliveryService(
     IDidResolver didResolver,
-    IIssuerKeyProvider keys,
+    IIssuerSigner signer,
     HttpClient http) : ICredentialDeliveryService
 {
     public async Task<DeliveryResult> DeliverAsync(
@@ -44,7 +44,7 @@ public sealed class HttpCredentialDeliveryService(
         {
             Content = new StringContent(message.ToJsonString(), Encoding.UTF8, "application/json"),
         };
-        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + IssueSelfToken(holderDid));
+        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + await IssueSelfTokenAsync(holderDid, ct));
 
         try
         {
@@ -59,18 +59,18 @@ public sealed class HttpCredentialDeliveryService(
         }
     }
 
-    private string IssueSelfToken(string audience)
+    private Task<string> IssueSelfTokenAsync(string audience, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
-        var header = new JsonObject { ["typ"] = "JWT", ["kid"] = keys.KeyId };
+        var header = new JsonObject { ["typ"] = "JWT" };
         var payload = new JsonObject
         {
-            ["iss"] = keys.IssuerDid,
-            ["sub"] = keys.IssuerDid,
+            ["iss"] = signer.IssuerDid,
+            ["sub"] = signer.IssuerDid,
             ["aud"] = audience,
             ["iat"] = now.ToUnixTimeSeconds(),
             ["exp"] = now.AddMinutes(5).ToUnixTimeSeconds(),
         };
-        return Jws.Sign(header, payload, keys.SigningKey);
+        return Jws.SignAsync(header, payload, signer, ct);
     }
 }

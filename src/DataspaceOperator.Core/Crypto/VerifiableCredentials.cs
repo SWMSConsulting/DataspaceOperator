@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using DataspaceOperator.Core.Abstractions;
 
 namespace DataspaceOperator.Core.Crypto;
 
@@ -8,18 +9,10 @@ namespace DataspaceOperator.Core.Crypto;
 /// </summary>
 public static class VerifiableCredentials
 {
-    /// <summary>Issue a signed JWT-VC. Returns the compact JWS.</summary>
-    public static string IssueJwtVc(
-        Ed25519Key issuerKey,
-        string issuerDid,
-        string keyId,
-        string subjectDid,
-        IReadOnlyList<string> types,
-        JsonObject credentialSubjectClaims,
-        TimeSpan validity,
-        JsonObject? credentialStatus = null,
-        string? credentialId = null,
-        IReadOnlyList<string>? additionalContexts = null)
+    private static (JsonObject Header, JsonObject Payload) BuildVcParts(
+        string issuerDid, string keyId, string subjectDid, IReadOnlyList<string> types,
+        JsonObject credentialSubjectClaims, TimeSpan validity,
+        JsonObject? credentialStatus, string? credentialId, IReadOnlyList<string>? additionalContexts)
     {
         var now = DateTimeOffset.UtcNow;
         var exp = now.Add(validity);
@@ -59,7 +52,28 @@ public static class VerifiableCredentials
             ["exp"] = exp.ToUnixTimeSeconds(),
             ["vc"] = vc,
         };
+        return (header, payload);
+    }
+
+    /// <summary>Issue a signed JWT-VC with a local key (used by tests / a local issuer).</summary>
+    public static string IssueJwtVc(
+        Ed25519Key issuerKey, string issuerDid, string keyId, string subjectDid,
+        IReadOnlyList<string> types, JsonObject credentialSubjectClaims, TimeSpan validity,
+        JsonObject? credentialStatus = null, string? credentialId = null, IReadOnlyList<string>? additionalContexts = null)
+    {
+        var (header, payload) = BuildVcParts(issuerDid, keyId, subjectDid, types, credentialSubjectClaims, validity, credentialStatus, credentialId, additionalContexts);
         return Jws.Sign(header, payload, issuerKey);
+    }
+
+    /// <summary>Issue a signed JWT-VC through an <see cref="IIssuerSigner"/> (local or Vault Transit).</summary>
+    public static Task<string> IssueJwtVcAsync(
+        IIssuerSigner signer, string subjectDid,
+        IReadOnlyList<string> types, JsonObject credentialSubjectClaims, TimeSpan validity,
+        JsonObject? credentialStatus = null, string? credentialId = null,
+        IReadOnlyList<string>? additionalContexts = null, CancellationToken ct = default)
+    {
+        var (header, payload) = BuildVcParts(signer.IssuerDid, signer.KeyId, subjectDid, types, credentialSubjectClaims, validity, credentialStatus, credentialId, additionalContexts);
+        return Jws.SignAsync(header, payload, signer, ct);
     }
 
     /// <summary>Wrap one or more VC-JWTs into a signed Verifiable Presentation (VP-JWT).</summary>

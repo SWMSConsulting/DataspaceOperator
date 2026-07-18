@@ -21,15 +21,17 @@ public static class ProtocolIntegration
         var issuerDid = config["Issuer:Did"] ?? "did:web:issuer.localhost";
 
         services.AddHttpClient();
-        // Issuer signing key from the secret store (HashiCorp Vault if Vault:Enabled, else config).
-        services.AddSingleton<IIssuerKeyProvider>(_ =>
-            SecretStores.BuildIssuerKeyProviderAsync(config, new HttpClient(), issuerDid).GetAwaiter().GetResult());
+        // Issuer signer: Vault Transit (key stays in Vault), Vault KV, or config seed.
+        // A dedicated HttpClient (kept for the app lifetime by a Vault Transit signer).
+        var signerHttp = new HttpClient();
+        services.AddSingleton<IIssuerSigner>(_ =>
+            SecretStores.BuildIssuerSignerAsync(config, signerHttp, issuerDid).GetAwaiter().GetResult());
         services.AddSingleton<DidDocumentBuilder>();
         services.AddSingleton<IssuerMetadata>();
         // Persistent status list (revocation survives restarts).
         services.AddScoped<IStatusListStore, XafStatusListStore>();
         services.AddScoped(sp => new StatusListService(
-            sp.GetRequiredService<IIssuerKeyProvider>(), sp.GetRequiredService<IStatusListStore>(),
+            sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(),
             $"{issuerDid}/status-lists/revocation"));
         services.AddSingleton<IDidResolver, OperatorDidResolver>();
 
@@ -48,12 +50,12 @@ public static class ProtocolIntegration
 }
 
 /// <summary>Resolves our own issuer DID locally; everything else via did:web over HTTP.</summary>
-public sealed class OperatorDidResolver(IIssuerKeyProvider keys, DidDocumentBuilder builder, IHttpClientFactory httpFactory)
+public sealed class OperatorDidResolver(IIssuerSigner signer, DidDocumentBuilder builder, IHttpClientFactory httpFactory)
     : IDidResolver
 {
     public Task<DidDocument?> ResolveAsync(string did, CancellationToken ct = default)
     {
-        if (string.Equals(did, keys.IssuerDid, StringComparison.Ordinal))
+        if (string.Equals(did, signer.IssuerDid, StringComparison.Ordinal))
             return Task.FromResult<DidDocument?>(builder.BuildIssuerDocument());
         var http = new DidWebResolver(httpFactory.CreateClient(), useHttps: false);
         return http.ResolveAsync(did, ct);

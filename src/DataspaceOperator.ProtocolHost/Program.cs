@@ -10,12 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 var issuerDid = builder.Configuration["Issuer:Did"] ?? "did:web:issuer.localhost";
 
-// --- issuer identity (key seed from the secret store: Vault if enabled, else config) ---
-using (var startupHttp = new HttpClient())
-{
-    var issuerKey = await SecretStores.BuildIssuerKeyProviderAsync(builder.Configuration, startupHttp, issuerDid);
-    builder.Services.AddSingleton<IIssuerKeyProvider>(issuerKey);
-}
+// --- issuer signer (Vault Transit = key stays in Vault; else local key from Vault-KV/config) ---
+// The signer may retain this HttpClient (Vault Transit) for the app lifetime; do not dispose it.
+var signerHttp = new HttpClient();
+var issuerSigner = await SecretStores.BuildIssuerSignerAsync(builder.Configuration, signerHttp, issuerDid);
+builder.Services.AddSingleton<IIssuerSigner>(issuerSigner);
 
 // --- stores (in-memory; swap for XAF/EF-backed implementations) ---
 builder.Services.AddSingleton<IParticipantStore, InMemoryParticipantStore>();
@@ -38,18 +37,18 @@ builder.Services.AddSingleton<DcpIssuanceService>();
 builder.Services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
 builder.Services.AddSingleton<WalletSink>();
 builder.Services.AddSingleton(sp =>
-    new StatusListService(sp.GetRequiredService<IIssuerKeyProvider>(), sp.GetRequiredService<IStatusListStore>(), $"{issuerDid}/status-lists/revocation"));
+    new StatusListService(sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(), $"{issuerDid}/status-lists/revocation"));
 
 var app = builder.Build();
 
 // --- seed: trust our own issuer + register our issuer DID document for local resolution ---
 {
-    var keys = app.Services.GetRequiredService<IIssuerKeyProvider>();
+    var signer = app.Services.GetRequiredService<IIssuerSigner>();
     var trusted = app.Services.GetRequiredService<ITrustedIssuerStore>();
-    await trusted.UpsertAsync(new TrustedIssuer { Did = keys.IssuerDid, SupportedTypes = [], IsOwnIssuer = true });
+    await trusted.UpsertAsync(new TrustedIssuer { Did = signer.IssuerDid, SupportedTypes = [], IsOwnIssuer = true });
 
     var issuerDoc = app.Services.GetRequiredService<DidDocumentBuilder>().BuildIssuerDocument();
-    app.Services.GetRequiredService<CompositeDidResolver>().Register(keys.IssuerDid, issuerDoc);
+    app.Services.GetRequiredService<CompositeDidResolver>().Register(signer.IssuerDid, issuerDoc);
 }
 
 // --- the dataspace protocol endpoints (the interoperability contract) ---

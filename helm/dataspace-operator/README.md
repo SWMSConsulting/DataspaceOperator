@@ -62,6 +62,20 @@ Then point your `did:web` host at `GET /.well-known/did.json` and expose the Ser
 | `ingress.*` | ingress |
 | `vault.*` | optional HashiCorp Vault (see below) |
 
+## Choosing a secret backend for the issuer key
+
+The operator holds essentially **one** dataspace secret: its issuer signing key. Pick per environment:
+
+| Option | When | Notes |
+|---|---|---|
+| **Kubernetes Secret** (default) | small/simple deployments | Secrets are only base64 in etcd — enable **encryption at rest** (ideally KMS-backed) and strict RBAC, otherwise it is "obfuscated, not protected". No audit/rotation. |
+| **Vault KV** (`vault.app.enabled`) | you need audit/rotation, or already run Vault | seed stored at rest in Vault; the app reads it at startup. |
+| **Vault Transit signing** (`vault.transit.enabled`) | the key's compromise is catastrophic | The **private key never leaves Vault** — the app calls Vault to sign. Strongest option for a signing key. |
+
+> Running Vault just for one static key is often over-engineering. `Kubernetes Secret + etcd
+> encryption-at-rest + RBAC` is a reasonable default; move to Vault Transit when you want the key to
+> be non-extractable.
+
 ## Security notes
 
 - **Issuer seed & URL signing key are secrets** — set real values (or `existingSecret`). Do not keep
