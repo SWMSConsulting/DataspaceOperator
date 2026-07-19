@@ -39,7 +39,8 @@ builder.Services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliver
 builder.Services.AddHttpClient<ICredentialOfferService, HttpCredentialOfferService>();
 builder.Services.AddSingleton<WalletSink>();
 builder.Services.AddSingleton(sp =>
-    new StatusListService(sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(), $"{issuerDid}/status-lists/revocation"));
+    new StatusListService(sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(),
+        $"{DidWebResolver.DidWebToOrigin(issuerDid)}/status-lists/revocation"));
 
 var app = builder.Build();
 

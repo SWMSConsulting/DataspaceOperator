@@ -30,9 +30,12 @@ public static class ProtocolIntegration
         services.AddSingleton<IssuerMetadata>();
         // Persistent status list (revocation survives restarts).
         services.AddScoped<IStatusListStore, XafStatusListStore>();
+        // The status-list credential URL must be an HTTP(S) URL the holder wallet can fetch to check
+        // revocation — derive it from the DID origin (behind the reverse proxy), not the did: scheme.
+        var statusListUrl = $"{DidWebResolver.DidWebToOrigin(issuerDid)}/status-lists/revocation";
         services.AddScoped(sp => new StatusListService(
             sp.GetRequiredService<IIssuerSigner>(), sp.GetRequiredService<IStatusListStore>(),
-            $"{issuerDid}/status-lists/revocation"));
+            statusListUrl));
         services.AddSingleton<IDidResolver, OperatorDidResolver>();
 
         // store adapters over the XAF object space (per-request)
