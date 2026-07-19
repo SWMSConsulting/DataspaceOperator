@@ -66,7 +66,10 @@ public sealed class StatusListService(IIssuerSigner signer, IStatusListStore sto
         using var ms = new MemoryStream();
         using (var gz = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true))
             gz.Write(s.Bits, 0, s.Bits.Length);
-        var encodedList = Base64Url.Encode(ms.ToArray());
+        // W3C BitstringStatusList: encodedList is a multibase-encoded base64url value. The leading
+        // 'u' is the multibase code for base64url-no-pad; verifiers (EDC) chop it off and use the
+        // base64url decoder. Without it they fall back to a standard base64 decoder and choke on '-'.
+        var encodedList = "u" + Base64Url.Encode(ms.ToArray());
 
         var subject = new JsonObject
         {
