@@ -5,7 +5,7 @@
 #     --version 0.3.2 -n windx-bob -f ih-full-bob.yaml
 #
 # Shared per-participant Vault + Postgres:
-#   Vault   : http://bob-vault:8200   token=root
+#   Vault   : http://bob-vault:8200   token=<generated>
 #   Postgres: bob-postgres:5432  db=ih  user/pass=edc/edc
 #
 # Vault aliases established (read by bob-edc connector):
@@ -42,7 +42,7 @@ identityhub:
     EDC_IH_IAM_ID: "did:web:bob-windx.cluster.swms-cloud.com"
     EDC_IAM_STS_PRIVATEKEY_ALIAS: "did:web:bob-windx.cluster.swms-cloud.com#signing-key-1"
     EDC_IAM_STS_PUBLICKEY_ID: "did:web:bob-windx.cluster.swms-cloud.com#signing-key-1"
-    EDC_IH_API_SUPERUSER_KEY: "c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="
+    EDC_IH_API_SUPERUSER_KEY: "CHANGE-ME-SUPERUSER-KEY"
     EDC_IAM_ACCESSTOKEN_JTI_VALIDATION: "true"
 
   iatp:
@@ -89,7 +89,7 @@ vault:
     enabled: false
   hashicorp:
     url: "http://bob-vault:8200"
-    token: "root"
+    token: "CHANGE-ME-VAULT-TOKEN"
     timeout: 30
     healthCheck:
       enabled: true

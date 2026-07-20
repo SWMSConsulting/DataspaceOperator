@@ -5,7 +5,7 @@
 #     --version 0.12.1 -n windx-alice -f conn-full-alice.yaml
 #
 # Shares the SAME per-participant Vault + Postgres as alice-ih:
-#   Vault   : http://alice-vault:8200  token=root
+#   Vault   : http://alice-vault:8200  token=<generated>
 #   Postgres: alice-postgres:5432  db=edc  user/pass=edc/edc
 #
 # Native STS wiring (no manual bridge): the connector reads the STS client secret
@@ -54,7 +54,7 @@ controlplane:
     cache_validity_seconds: 600
   endpoints:
     management:
-      authKey: "password"     # change for production
+      authKey: "CHANGE-ME-MANAGEMENT-KEY"
   # PUBLIC ingress for the DSP (protocol) endpoint -> https://alice-edc-windx.../api/v1/dsp
   # This URL also becomes EDC_DSP_CALLBACK_ADDRESS and must match the DID-doc ProtocolEndpoint.
   ingresses:
@@ -108,7 +108,7 @@ vault:
     enabled: false
   hashicorp:
     url: "http://alice-vault:8200"
-    token: "root"
+    token: "CHANGE-ME-VAULT-TOKEN"
     timeout: 30
     healthCheck:
       enabled: true

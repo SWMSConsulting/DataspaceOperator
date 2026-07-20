@@ -311,11 +311,25 @@ prüft keine Seite die Sperrliste — ausgestellte Credentials gelten bis zum Ab
 Geheimnisse in Alices eigener Infrastruktur. Die Zentrale hat darauf keinen Zugriff und speichert
 selbst kein einziges Teilnehmer-Geheimnis. Genau so ist der tractusx-Standardaufbau gedacht.
 
-**Dev-Einstellungen, die vor Produktivbetrieb zu ändern sind:**
-- Vault läuft im `-dev`-Modus mit Root-Token `root` (nicht persistent).
-- Connector-Management-API nutzt den Standardschlüssel `password`.
-- Der Super-User-Schlüssel des IH ist der bekannte MXD-Standardwert.
-- `POST /api/issuance/offer` an der Zentrale ist derzeit **nicht** authentifiziert (Test-Trigger).
+**Härtung — Stand:**
+
+| Punkt | Status |
+|---|---|
+| `POST /api/issuance/offer` | **Abgesichert.** Erfordert `X-Api-Key` (Wert aus `operator.apiKey`, liegt im Kubernetes-Secret). Ohne konfigurierten Key wird die Route **gar nicht erst gemappt** (fail closed). Die UI-Aktion ist unabhängig davon — sie ruft den Dienst prozessintern auf. |
+| Vault-Token | **Rotiert.** Kein `root` mehr; je Teilnehmer ein eigener Zufallswert. |
+| Connector-Management-Key | **Rotiert.** Kein `password` mehr; je Teilnehmer eigener Zufallswert. |
+| IH-Super-User-Key | **Rotiert.** Nicht mehr der MXD-Standardwert. |
+| Angriffsfläche aus dem Internet | Nur: zentraler Dienst, IH (`credentials`, `did`), Connector (`protocol`, `public`). Management-API, Identity-API und Vault haben **keinen** Ingress. |
+
+Die Dateien unter `deploy/participants/` enthalten bewusst **Platzhalter** (`CHANGE-ME-…`) — echte
+Werte gehören nicht ins Repository.
+
+**Weiterhin offen (bewusst):**
+- Der Vault läuft im `-dev`-Modus und hält seine Daten **nur im Arbeitsspeicher**. Startet der
+  Vault-Pod neu, sind der private Schlüssel und das STS-Secret des Teilnehmers weg; dann müssen
+  Schritt 4 (Teilnehmer anlegen) und Schritt 7 (Credential ausstellen) wiederholt werden — die
+  IH-Datenbank vorher zurücksetzen (`DROP DATABASE ih; CREATE DATABASE ih;`), sonst verweist sie
+  auf Schlüssel, die es nicht mehr gibt. Für Produktivbetrieb: Vault mit persistentem Storage.
 
 **Versionen:** IdentityHub-Chart `0.3.2`, Connector-Chart `0.12.1` (lokal gepatcht) — zwei
 verschiedene Release-Stränge. Beim Aktualisieren beide zusammen prüfen.

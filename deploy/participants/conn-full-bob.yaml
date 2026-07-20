@@ -5,7 +5,7 @@
 #     --version 0.12.1 -n windx-bob -f conn-full-bob.yaml
 #
 # Shares the SAME per-participant Vault + Postgres as bob-ih:
-#   Vault   : http://bob-vault:8200  token=root
+#   Vault   : http://bob-vault:8200  token=<generated>
 #   Postgres: bob-postgres:5432  db=edc  user/pass=edc/edc
 # =============================================================================
 
@@ -39,7 +39,7 @@ controlplane:
     cache_validity_seconds: 600
   endpoints:
     management:
-      authKey: "password"
+      authKey: "CHANGE-ME-MANAGEMENT-KEY"
   ingresses:
     - enabled: true
       hostname: "bob-edc-windx.cluster.swms-cloud.com"
@@ -87,7 +87,7 @@ vault:
     enabled: false
   hashicorp:
     url: "http://bob-vault:8200"
-    token: "root"
+    token: "CHANGE-ME-VAULT-TOKEN"
     timeout: 30
     healthCheck:
       enabled: true

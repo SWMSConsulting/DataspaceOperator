@@ -5,7 +5,7 @@
 #     --version 0.3.2 -n windx-alice -f ih-full-alice.yaml
 #
 # Shared per-participant Vault + Postgres (same instances the connector uses):
-#   Vault   : http://alice-vault:8200   token=root   (KV v2 mount 'secret/')
+#   Vault   : http://alice-vault:8200   token=<generated>   (KV v2 mount 'secret/')
 #   Postgres: alice-postgres:5432  db=ih  user/pass=edc/edc
 #
 # Vault aliases established by THIS deployment (read by alice-edc connector):
@@ -39,7 +39,7 @@ identityhub:
       path: /api/identity
       # -- Identity (management) API key is resolved from the VAULT at this alias.
       #    Seed it with the MXD super-user key (see DEPLOY.md):
-      #      vault kv put secret/sup3r$3cr3t content="c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="
+      #      vault kv put secret/sup3r$3cr3t content="CHANGE-ME-SUPERUSER-KEY"
       authKeyAlias: "sup3r$3cr3t"
     accounts:
       port: 8085
@@ -61,7 +61,7 @@ identityhub:
     EDC_IAM_STS_PUBLICKEY_ID: "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
     # Belt-and-suspenders literal super-user key (MXD default). Primary mechanism is the
     # vault authKeyAlias above; keep this only if the image also honours the literal env.
-    EDC_IH_API_SUPERUSER_KEY: "c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="
+    EDC_IH_API_SUPERUSER_KEY: "CHANGE-ME-SUPERUSER-KEY"
     EDC_IAM_ACCESSTOKEN_JTI_VALIDATION: "true"
 
   # -- Chart-native "initial participant" bootstrap. DISABLED here because we provision
@@ -117,7 +117,7 @@ vault:
     enabled: false
   hashicorp:
     url: "http://alice-vault:8200"
-    token: "root"
+    token: "CHANGE-ME-VAULT-TOKEN"
     timeout: 30
     healthCheck:
       enabled: true

@@ -24,7 +24,7 @@ spec:
           args: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
           env:
             - name: VAULT_DEV_ROOT_TOKEN_ID
-              value: "root"
+              value: "CHANGE-ME-VAULT-TOKEN"
             - name: VAULT_DEV_LISTEN_ADDRESS
               value: "0.0.0.0:8200"
             - name: VAULT_ADDR
