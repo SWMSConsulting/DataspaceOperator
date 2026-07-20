@@ -10,5 +10,6 @@ data:
   Issuer__Did: {{ .Values.issuer.did | quote }}
   # false omits credentialStatus from issued credentials (no revocation), avoiding the
   # IdentityHub-expects-JWT vs EDC-expects-JSON conflict on the status-list URL.
-  Issuer__IncludeCredentialStatus: {{ .Values.issuer.includeCredentialStatus | default true | quote }}
+  # NOTE: `default` treats boolean false as empty, so test for nil explicitly.
+  Issuer__IncludeCredentialStatus: {{ if kindIs "invalid" .Values.issuer.includeCredentialStatus }}"true"{{ else }}{{ .Values.issuer.includeCredentialStatus | quote }}{{ end }}
   ConnectionStrings__ConnectionString: {{ include "dataspace-operator.connectionString" . | quote }}
