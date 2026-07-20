@@ -46,16 +46,23 @@ public static class ProtocolEndpoints
     private static void MapBdrsDirectory(IEndpointRouteBuilder app)
     {
         app.MapGet("/api/directory/bpn-directory", async (
-            HttpContext ctx, VpVerifier verifier, BdrsDirectoryService bdrs, CancellationToken ct) =>
+            HttpContext ctx, VpVerifier verifier, BdrsDirectoryService bdrs, ILoggerFactory lf, CancellationToken ct) =>
         {
+            var log = lf.CreateLogger("Bdrs");
             var auth = ctx.Request.Headers.Authorization.ToString();
             if (!auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 return Results.Unauthorized();
 
             var vpJwt = auth["Bearer ".Length..].Trim();
+            log.LogInformation("BDRS read: membership VP token (len={Len}, prefix={Prefix})",
+                vpJwt.Length, vpJwt.Length > 24 ? vpJwt[..24] : vpJwt);
             var verification = await verifier.VerifyMembershipAsync(vpJwt, ct);
             if (!verification.Success)
+            {
+                log.LogWarning("BDRS read rejected: {Error}", verification.Error);
                 return Results.Json(new { error = verification.Error }, statusCode: StatusCodes.Status401Unauthorized);
+            }
+            log.LogInformation("BDRS read authorized for holder {Holder}", verification.HolderDid);
 
             var map = await bdrs.GetDirectoryAsync(ct);
             var json = JsonSerializer.SerializeToUtf8Bytes(map);
