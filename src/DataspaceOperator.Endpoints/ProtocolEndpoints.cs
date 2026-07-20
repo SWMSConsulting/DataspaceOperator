@@ -63,8 +63,8 @@ public static class ProtocolEndpoints
                 return Results.Json(new { error = verification.Error }, statusCode: StatusCodes.Status401Unauthorized);
             }
             var map = await bdrs.GetDirectoryAsync(ct);
-            log.LogInformation("BDRS read authorized for holder {Holder}; directory has {Count} entries: {Bpns}",
-                verification.HolderDid, map.Count, string.Join(", ", map.Keys));
+            log.LogInformation("BDRS read authorized for holder {Holder}; directory: {Map}",
+                verification.HolderDid, string.Join("; ", map.Select(kv => $"{kv.Key}={kv.Value}")));
             var json = JsonSerializer.SerializeToUtf8Bytes(map);
 
             // connectors send Accept-Encoding: gzip and expect a gzip body
