@@ -34,9 +34,10 @@ public sealed class VpVerifier(IDidResolver didResolver, ITrustedIssuerStore tru
         // 1) verify the holder's signature over the VP
         var holderDoc = await didResolver.ResolveAsync(holderDid, ct);
         if (holderDoc is null) return VerifiedPresentation.Fail($"Cannot resolve holder DID '{holderDid}'.");
-        var holderKey = DidWebResolver.GetKey(holderDoc, vp.Kid);
-        if (holderKey is null) return VerifiedPresentation.Fail("Holder DID document has no usable Ed25519 key.");
-        if (!Jws.Verify(vp, holderKey)) return VerifiedPresentation.Fail("VP signature is invalid.");
+        var holderJwk = DidWebResolver.GetVerificationJwk(holderDoc, vp.Kid);
+        if (holderJwk is null) return VerifiedPresentation.Fail("Holder DID document has no usable verification key.");
+        if (!JwkVerifier.Verify(holderJwk, vp.Algorithm, vp.SigningInput, vp.Signature))
+            return VerifiedPresentation.Fail("VP signature is invalid.");
 
         // 2) extract and verify each contained VC
         var vcNodes = vp.Payload["vp"]?["verifiableCredential"]?.AsArray();
@@ -62,9 +63,10 @@ public sealed class VpVerifier(IDidResolver didResolver, ITrustedIssuerStore tru
             // 2b) verify the issuer's signature over the VC
             var issuerDoc = await didResolver.ResolveAsync(info.IssuerDid, ct);
             if (issuerDoc is null) return VerifiedPresentation.Fail($"Cannot resolve issuer DID '{info.IssuerDid}'.");
-            var issuerKey = DidWebResolver.GetKey(issuerDoc, vc.Kid);
-            if (issuerKey is null) return VerifiedPresentation.Fail("Issuer DID document has no usable Ed25519 key.");
-            if (!Jws.Verify(vc, issuerKey)) return VerifiedPresentation.Fail("VC signature is invalid.");
+            var issuerJwk = DidWebResolver.GetVerificationJwk(issuerDoc, vc.Kid);
+            if (issuerJwk is null) return VerifiedPresentation.Fail("Issuer DID document has no usable verification key.");
+            if (!JwkVerifier.Verify(issuerJwk, vc.Algorithm, vc.SigningInput, vc.Signature))
+                return VerifiedPresentation.Fail("VC signature is invalid.");
 
             // 2c) trust: is this issuer trusted for this credential type?
             var isTrusted = false;
