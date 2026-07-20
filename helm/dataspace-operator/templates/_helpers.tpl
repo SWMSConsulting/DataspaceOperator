@@ -73,6 +73,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     secretKeyRef:
       name: {{ include "dataspace-operator.fullname" . }}
       key: url-signing-key
+{{- with .Values.operator.apiKey }}
+- name: Operator__ApiKey
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "dataspace-operator.fullname" $ }}
+      key: operator-api-key
+{{- end }}
 - name: Bootstrap__AdminUserName
   value: {{ .Values.admin.username | quote }}
 - name: Bootstrap__AdminPassword

@@ -32,6 +32,12 @@ issuer:
 security:
   urlSigningKey: "CHANGE-ME-URL-SIGNING-KEY"
 
+## Operator automation. POST /api/issuance/offer is only exposed when an API key is set here;
+## callers must then send it as the X-Api-Key header. Leave empty to not expose the route at all
+## (the "Issue Membership Credential" UI action works either way — it calls the service in-process).
+operator:
+  apiKey: ""
+
 ## Initial admin user, created once on the first DB migration (init container).
 ## Production-safe: the admin is only created when a password is set (no empty passwords).
 admin:

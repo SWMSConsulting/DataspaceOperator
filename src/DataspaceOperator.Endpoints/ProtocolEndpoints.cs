@@ -1,7 +1,9 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Configuration;
 using DataspaceOperator.Core.Abstractions;
 using DataspaceOperator.Core.Crypto;
 using DataspaceOperator.Core.Protocol;
@@ -91,12 +93,24 @@ public static class ProtocolEndpoints
             Results.Json(meta.Build(DidWebResolver.DidWebToOrigin(signer.IssuerDid))));
 
         // Operator trigger (issuer-initiated): POST a CredentialOffer to the holder wallet, which
-        // makes the holder auto-initiate the DCP request back to us. This is what the "Issue
-        // Membership Credential" UI action drives; exposed here so issuance can also be kicked off
-        // by an operator over HTTP.
+        // makes the holder auto-initiate the DCP request back to us. The "Issue Membership
+        // Credential" UI action calls the same service in-process, so this HTTP route exists only
+        // for automation and is therefore guarded by an operator API key.
+        //
+        // Fail closed: without Operator:ApiKey configured the route is not mapped at all, so a
+        // deployment can never accidentally expose an unauthenticated issuance trigger.
+        var operatorApiKey = app.ServiceProvider.GetRequiredService<IConfiguration>()["Operator:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(operatorApiKey))
         app.MapPost("/api/issuance/offer", async (
             HttpContext ctx, string holderDid, string? type, ICredentialOfferService offers, CancellationToken ct) =>
         {
+            var presented = ctx.Request.Headers["X-Api-Key"].ToString();
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(presented), Encoding.UTF8.GetBytes(operatorApiKey)))
+            {
+                ctx.Items[AuditMiddleware.DetailKey] = "rejected: invalid operator API key";
+                return Results.Json(new { error = "invalid operator API key" }, statusCode: 401);
+            }
             ctx.Items[AuditMiddleware.DidKey] = holderDid;
             var res = await offers.SendOfferAsync(holderDid, type ?? "MembershipCredential", ct);
             ctx.Items[AuditMiddleware.DetailKey] = res.Success
