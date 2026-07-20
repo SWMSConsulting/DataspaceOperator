@@ -1,0 +1,64 @@
+# =============================================================================
+# PostgreSQL for participant BOB  -- namespace windx-bob
+# Databases: edc (connector bob-edc), ih (IdentityHub bob-ih)
+# Credentials: user=edc password=edc
+# Reachable in-cluster at:  bob-postgres:5432
+# Apply with:  kubectl -n windx-bob apply -f postgres-bob.yaml
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bob-postgres-init
+  namespace: windx-bob
+data:
+  01-create-ih.sql: |
+    CREATE DATABASE ih;
+    GRANT ALL PRIVILEGES ON DATABASE ih TO edc;
+    GRANT ALL PRIVILEGES ON DATABASE edc TO edc;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bob-postgres
+  namespace: windx-bob
+  labels: { app: bob-postgres }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: bob-postgres }
+  template:
+    metadata:
+      labels: { app: bob-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          env:
+            - { name: POSTGRES_USER,     value: "edc" }
+            - { name: POSTGRES_PASSWORD, value: "edc" }
+            - { name: POSTGRES_DB,       value: "edc" }
+            - { name: PGDATA,            value: "/var/lib/postgresql/data/pgdata" }
+          ports:
+            - { containerPort: 5432, name: postgres }
+          volumeMounts:
+            - { name: initdb, mountPath: /docker-entrypoint-initdb.d }
+            - { name: data,   mountPath: /var/lib/postgresql/data }
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "edc"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: initdb
+          configMap: { name: bob-postgres-init }
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bob-postgres
+  namespace: windx-bob
+spec:
+  selector: { app: bob-postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: 5432 }

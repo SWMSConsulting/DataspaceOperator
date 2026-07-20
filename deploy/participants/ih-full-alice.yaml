@@ -1,0 +1,127 @@
+# =============================================================================
+# Helm values: tractusx-edc/tractusx-identityhub  v0.3.2   (participant ALICE)
+# Release name MUST be:  alice-ih   (fullnameOverride pins Service DNS = alice-ih)
+#   helm upgrade --install alice-ih tractusx-edc/tractusx-identityhub \
+#     --version 0.3.2 -n windx-alice -f ih-full-alice.yaml
+#
+# Shared per-participant Vault + Postgres (same instances the connector uses):
+#   Vault   : http://alice-vault:8200   token=root   (KV v2 mount 'secret/')
+#   Postgres: alice-postgres:5432  db=ih  user/pass=edc/edc
+#
+# Vault aliases established by THIS deployment (read by alice-edc connector):
+#   * STS client secret ...... "did:web:alice-windx.cluster.swms-cloud.com-sts-client-secret"
+#         -> auto-created when the participant context is provisioned (see DEPLOY.md POST).
+#            IdentityHub convention: "<participantContextId>-sts-client-secret".
+#   * DID signing private key . "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
+#         -> created by the participant-provisioning POST (key.privateKeyAlias / keyGeneratorParams).
+#            Reused by the connector data-plane token signer/verifier (shared vault).
+# =============================================================================
+
+fullnameOverride: "alice-ih"
+
+# Central Postgres + Vault are deployed separately (postgres-alice.yaml / vault-alice.yaml)
+install:
+  postgresql: false
+  vault: false
+
+identityhub:
+  image:
+    pullPolicy: IfNotPresent
+  # -- publish did:web over HTTPS  -> edc.iam.did.web.use.https=true
+  #    DID doc for did:web:alice-windx.cluster.swms-cloud.com is served by the
+  #    'did' endpoint at  https://alice-windx.cluster.swms-cloud.com/.well-known/did.json
+  didweb:
+    https: true
+
+  endpoints:
+    identity:
+      port: 8082
+      path: /api/identity
+      # -- Identity (management) API key is resolved from the VAULT at this alias.
+      #    Seed it with the MXD super-user key (see DEPLOY.md):
+      #      vault kv put secret/sup3r$3cr3t content="c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="
+      authKeyAlias: "sup3r$3cr3t"
+    accounts:
+      port: 8085
+      path: /api/accounts
+      authKeyAlias: "sup3r$3cr3t"
+    # sts endpoint stays INTERNAL (connector reaches it in-cluster at :8087/api/sts/token)
+    sts:
+      port: 8087
+      path: /api/sts
+
+  # -- Extra EDC env. These mirror the MXD identity-hub module (custom image) knobs
+  #    that are NOT already emitted by the chart's ConfigMap.
+  env:
+    # global "self" participant id (MXD: EDC_IH_IAM_ID)
+    EDC_IH_IAM_ID: "did:web:alice-windx.cluster.swms-cloud.com"
+    # STS token-signing key = the participant DID key (kid resolvable via the DID doc).
+    # Alias is populated in the shared vault by the provisioning POST (keyGeneratorParams).
+    EDC_IAM_STS_PRIVATEKEY_ALIAS: "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
+    EDC_IAM_STS_PUBLICKEY_ID: "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
+    # Belt-and-suspenders literal super-user key (MXD default). Primary mechanism is the
+    # vault authKeyAlias above; keep this only if the image also honours the literal env.
+    EDC_IH_API_SUPERUSER_KEY: "c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="
+    EDC_IAM_ACCESSTOKEN_JTI_VALIDATION: "true"
+
+  # -- Chart-native "initial participant" bootstrap. DISABLED here because we provision
+  #    the participant explicitly via the Identity API POST (MXD-faithful, lets us set the
+  #    CredentialService + ProtocolEndpoint serviceEndpoints and keyGeneratorParams).
+  #    ALTERNATIVE (see DEPLOY.md): set enabled=true to have the chart create the context +
+  #    STS account with a secret WE choose at secret_alias below (deterministic, no POST) --
+  #    but then the DID-doc service endpoints are not set explicitly.
+  iatp:
+    sts:
+      oauth:
+        client:
+          enabled: false
+          id: "did:web:alice-windx.cluster.swms-cloud.com"
+          secret: "changeme-alice-sts-secret"
+          secret_alias: "did:web:alice-windx.cluster.swms-cloud.com-sts-client-secret"
+          x_api_key: "ZGlkOndlYjphbGljZS13aW5keC5jbHVzdGVyLnN3bXMtY2xvdWQuY29t.alice-ih-apikey"
+
+  # -- Ingress. [0] = public presentation ingress; [1] = internal identity API (disabled).
+  ingresses:
+    # PUBLIC: credentials (DCP Presentation API) + did (did:web document). Internet-facing.
+    - enabled: true
+      hostname: "alice-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - credentials
+        - did
+      tls:
+        enabled: true
+        secretName: "alice-ih-tls"
+      certManager:
+        clusterIssuer: "letsencrypt-prod"
+    # INTERNAL: identity + accounts + version. Not internet-facing (use port-forward to provision).
+    - enabled: false
+      hostname: "alice-ih.identity.local"
+      className: "nginx"
+      endpoints:
+        - identity
+        - accounts
+        - version
+      tls:
+        enabled: false
+
+postgresql:
+  jdbcUrl: "jdbc:postgresql://alice-postgres:5432/ih"
+  auth:
+    database: "ih"
+    username: "edc"
+    password: "edc"
+
+vault:
+  injector:
+    enabled: false
+  hashicorp:
+    url: "http://alice-vault:8200"
+    token: "root"
+    timeout: 30
+    healthCheck:
+      enabled: true
+      standbyOk: true
+    paths:
+      secret: /v1/secret
+      health: /v1/sys/health

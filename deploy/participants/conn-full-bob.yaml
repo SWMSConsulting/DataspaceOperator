@@ -1,0 +1,97 @@
+# =============================================================================
+# Helm values: tractusx-edc/tractusx-connector  0.12.1   (participant BOB)
+# Release name MUST be:  bob-edc
+#   helm upgrade --install bob-edc tractusx-edc/tractusx-connector \
+#     --version 0.12.1 -n windx-bob -f conn-full-bob.yaml
+#
+# Shares the SAME per-participant Vault + Postgres as bob-ih:
+#   Vault   : http://bob-vault:8200  token=root
+#   Postgres: bob-postgres:5432  db=edc  user/pass=edc/edc
+# =============================================================================
+
+fullnameOverride: "bob-edc"
+
+install:
+  postgresql: false
+  vault: false
+
+participant:
+  id: "BPNL00000000WB02"
+  contextId: "did:web:bob-windx.cluster.swms-cloud.com"
+
+iatp:
+  id: "did:web:bob-windx.cluster.swms-cloud.com"
+  trustedIssuers:
+    - id: "did:web:auth-windx.cluster.swms-cloud.com"
+      supportedTypes:
+        - "MembershipCredential"
+  sts:
+    oauth:
+      token_url: "http://bob-ih:8087/api/sts/token"
+      client:
+        id: "did:web:bob-windx.cluster.swms-cloud.com"
+        secret_alias: "did:web:bob-windx.cluster.swms-cloud.com-sts-client-secret"
+
+controlplane:
+  bdrs:
+    server:
+      url: "https://auth-windx.cluster.swms-cloud.com/api/directory"
+    cache_validity_seconds: 600
+  endpoints:
+    management:
+      authKey: "password"
+  ingresses:
+    - enabled: true
+      hostname: "bob-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - protocol
+      tls:
+        enabled: true
+        secretName: "bob-edc-tls"
+      certManager:
+        clusterIssuer: "letsencrypt-prod"
+    - enabled: false
+      hostname: "bob-edc.intranet"
+      endpoints:
+        - management
+        - control
+
+dataplane:
+  token:
+    signer:
+      privatekey_alias: "did:web:bob-windx.cluster.swms-cloud.com#signing-key-1"
+    verifier:
+      publickey_alias: "did:web:bob-windx.cluster.swms-cloud.com#signing-key-1"
+  ingresses:
+    - enabled: true
+      hostname: "bob-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - public
+      tls:
+        enabled: true
+        secretName: "bob-edc-tls"
+      certManager:
+        clusterIssuer: ""
+
+postgresql:
+  jdbcUrl: "jdbc:postgresql://bob-postgres:5432/edc"
+  auth:
+    database: "edc"
+    username: "edc"
+    password: "edc"
+
+vault:
+  injector:
+    enabled: false
+  hashicorp:
+    url: "http://bob-vault:8200"
+    token: "root"
+    timeout: 30
+    healthCheck:
+      enabled: true
+      standbyOk: true
+    paths:
+      secret: /v1/secret
+      health: /v1/sys/health

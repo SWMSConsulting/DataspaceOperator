@@ -1,0 +1,118 @@
+# =============================================================================
+# Helm values: tractusx-edc/tractusx-connector  0.12.1   (participant ALICE)
+# Release name MUST be:  alice-edc
+#   helm upgrade --install alice-edc tractusx-edc/tractusx-connector \
+#     --version 0.12.1 -n windx-alice -f conn-full-alice.yaml
+#
+# Shares the SAME per-participant Vault + Postgres as alice-ih:
+#   Vault   : http://alice-vault:8200  token=root
+#   Postgres: alice-postgres:5432  db=edc  user/pass=edc/edc
+#
+# Native STS wiring (no manual bridge): the connector reads the STS client secret
+# straight from the shared vault at the alias the IdentityHub stored it under:
+#   iatp.sts.oauth.client.secret_alias == "<did>-sts-client-secret"
+# The data-plane reuses the DID signing key the IdentityHub put in the same vault.
+# =============================================================================
+
+fullnameOverride: "alice-edc"
+
+install:
+  postgresql: false
+  vault: false
+
+participant:
+  # -- BPN (TRACTUSX_EDC_PARTICIPANT_BPN)
+  id: "BPNL00000000WA01"
+  # -- Connector participant context id (EDC_PARTICIPANT_CONTEXT_ID). Single-tenant => DID.
+  contextId: "did:web:alice-windx.cluster.swms-cloud.com"
+
+iatp:
+  # -- DID (EDC_PARTICIPANT_ID + EDC_IAM_ISSUER_ID)
+  id: "did:web:alice-windx.cluster.swms-cloud.com"
+  # -- Trust our central issuer for MembershipCredential (issued via central DCP flow).
+  #    EDC_IAM_TRUSTED-ISSUER_0-ISSUER_ID / _SUPPORTEDTYPES
+  trustedIssuers:
+    - id: "did:web:auth-windx.cluster.swms-cloud.com"
+      supportedTypes:
+        - "MembershipCredential"
+  sts:
+    oauth:
+      # -- In-cluster IdentityHub STS token endpoint (Service alice-ih, sts port 8087)
+      token_url: "http://alice-ih:8087/api/sts/token"
+      client:
+        # -- client_id presented to the STS == the participant DID
+        id: "did:web:alice-windx.cluster.swms-cloud.com"
+        # -- MUST equal the vault alias the IH stored the STS account secret under.
+        secret_alias: "did:web:alice-windx.cluster.swms-cloud.com-sts-client-secret"
+
+controlplane:
+  bdrs:
+    # -- Central BDRS base URL (EDC appends /bpn-directory itself).
+    #    TX_EDC_IAM_IATP_BDRS_SERVER_URL
+    server:
+      url: "https://auth-windx.cluster.swms-cloud.com/api/directory"
+    cache_validity_seconds: 600
+  endpoints:
+    management:
+      authKey: "password"     # change for production
+  # PUBLIC ingress for the DSP (protocol) endpoint -> https://alice-edc-windx.../api/v1/dsp
+  # This URL also becomes EDC_DSP_CALLBACK_ADDRESS and must match the DID-doc ProtocolEndpoint.
+  ingresses:
+    - enabled: true
+      hostname: "alice-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - protocol
+      tls:
+        enabled: true
+        secretName: "alice-edc-tls"        # cert owned by this ingress
+      certManager:
+        clusterIssuer: "letsencrypt-prod"
+    - enabled: false
+      hostname: "alice-edc.intranet"
+      endpoints:
+        - management
+        - control
+
+dataplane:
+  # Reuse the DID signing key created by the IdentityHub (shared vault) for EDR token sign/verify.
+  #   EDC_TRANSFER_PROXY_TOKEN_SIGNER_PRIVATEKEY_ALIAS / _VERIFIER_PUBLICKEY_ALIAS
+  token:
+    signer:
+      privatekey_alias: "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
+    verifier:
+      publickey_alias: "did:web:alice-windx.cluster.swms-cloud.com#signing-key-1"
+  # PUBLIC ingress for the data-plane public API -> https://alice-edc-windx.../api/public
+  # Same host as the control-plane DSP ingress; reuses the same TLS secret (no cert-manager here).
+  ingresses:
+    - enabled: true
+      hostname: "alice-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - public
+      tls:
+        enabled: true
+        secretName: "alice-edc-tls"        # reuse the control-plane cert
+      certManager:
+        clusterIssuer: ""
+
+postgresql:
+  jdbcUrl: "jdbc:postgresql://alice-postgres:5432/edc"
+  auth:
+    database: "edc"
+    username: "edc"
+    password: "edc"
+
+vault:
+  injector:
+    enabled: false
+  hashicorp:
+    url: "http://alice-vault:8200"
+    token: "root"
+    timeout: 30
+    healthCheck:
+      enabled: true
+      standbyOk: true
+    paths:
+      secret: /v1/secret
+      health: /v1/sys/health

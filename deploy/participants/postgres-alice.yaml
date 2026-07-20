@@ -1,0 +1,67 @@
+# =============================================================================
+# PostgreSQL for participant ALICE  -- namespace windx-alice
+# One instance, TWO logical databases:
+#   - edc  (used by the connector alice-edc:  postgresql.jdbcUrl -> /edc)
+#   - ih   (used by the IdentityHub alice-ih: postgresql.jdbcUrl -> /ih)
+# Credentials: user=edc password=edc  (used by BOTH charts' postgresql.auth.*)
+# Reachable in-cluster at:  alice-postgres:5432
+# Apply with:  kubectl -n windx-alice apply -f postgres-alice.yaml
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alice-postgres-init
+  namespace: windx-alice
+data:
+  # POSTGRES_DB below creates "edc"; this script adds the "ih" database.
+  01-create-ih.sql: |
+    CREATE DATABASE ih;
+    GRANT ALL PRIVILEGES ON DATABASE ih TO edc;
+    GRANT ALL PRIVILEGES ON DATABASE edc TO edc;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alice-postgres
+  namespace: windx-alice
+  labels: { app: alice-postgres }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: alice-postgres }
+  template:
+    metadata:
+      labels: { app: alice-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          env:
+            - { name: POSTGRES_USER,     value: "edc" }
+            - { name: POSTGRES_PASSWORD, value: "edc" }
+            - { name: POSTGRES_DB,       value: "edc" }
+            - { name: PGDATA,            value: "/var/lib/postgresql/data/pgdata" }
+          ports:
+            - { containerPort: 5432, name: postgres }
+          volumeMounts:
+            - { name: initdb, mountPath: /docker-entrypoint-initdb.d }
+            - { name: data,   mountPath: /var/lib/postgresql/data }
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "edc"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: initdb
+          configMap: { name: alice-postgres-init }
+        - name: data
+          emptyDir: {}   # DEMO: ephemeral. Swap for a PVC to persist.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alice-postgres
+  namespace: windx-alice
+spec:
+  selector: { app: alice-postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: 5432 }
