@@ -58,8 +58,37 @@ public sealed class StatusListService(IIssuerSigner signer, IStatusListStore sto
         ["statusListCredential"] = statusListUrl,
     };
 
-    /// <summary>The signed StatusList credential served at the status-list URL.</summary>
+    /// <summary>The signed StatusList credential (JWT form) served at the status-list URL.</summary>
     public async Task<string> BuildStatusListCredentialJwtAsync(CancellationToken ct = default)
+    {
+        var subject = await BuildSubjectAsync(ct);
+        return await VerifiableCredentials.IssueJwtVcAsync(
+            signer,
+            subjectDid: statusListUrl,
+            types: ["BitstringStatusListCredential"],
+            credentialSubjectClaims: subject,
+            validity: TimeSpan.FromDays(1),
+            credentialId: statusListUrl,
+            ct: ct);
+    }
+
+    /// <summary>
+    /// The StatusList credential as plain JSON-LD. EDC verifiers download the status list by URL and
+    /// parse the body as JSON, so this — not the JWT — is what they must receive.
+    /// </summary>
+    public async Task<JsonObject> BuildStatusListCredentialJsonAsync(CancellationToken ct = default)
+    {
+        var subject = await BuildSubjectAsync(ct);
+        return VerifiableCredentials.BuildVcJson(
+            signer.IssuerDid, signer.KeyId,
+            subjectDid: statusListUrl,
+            types: ["BitstringStatusListCredential"],
+            credentialSubjectClaims: subject,
+            validity: TimeSpan.FromDays(1),
+            credentialId: statusListUrl);
+    }
+
+    private async Task<JsonObject> BuildSubjectAsync(CancellationToken ct)
     {
         var s = await store.LoadAsync(ct);
 
@@ -71,20 +100,12 @@ public sealed class StatusListService(IIssuerSigner signer, IStatusListStore sto
         // base64url decoder. Without it they fall back to a standard base64 decoder and choke on '-'.
         var encodedList = "u" + Base64Url.Encode(ms.ToArray());
 
-        var subject = new JsonObject
+        return new JsonObject
         {
             ["type"] = "BitstringStatusList",
             ["statusPurpose"] = "revocation",
             ["encodedList"] = encodedList,
         };
-        return await VerifiableCredentials.IssueJwtVcAsync(
-            signer,
-            subjectDid: statusListUrl,
-            types: ["BitstringStatusListCredential"],
-            credentialSubjectClaims: subject,
-            validity: TimeSpan.FromDays(1),
-            credentialId: statusListUrl,
-            ct: ct);
     }
 
     private static void SetBit(StatusListState s, int index, bool value)

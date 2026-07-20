@@ -56,6 +56,20 @@ public static class VerifiableCredentials
     }
 
     /// <summary>Issue a signed JWT-VC with a local key (used by tests / a local issuer).</summary>
+    /// <summary>
+    /// The plain (unsigned) VC JSON, i.e. the <c>vc</c> claim on its own. Verifiers that fetch a
+    /// credential by URL — notably EDC's revocation-list downloader — parse the body as JSON-LD
+    /// rather than as a JWT, so a status-list credential must also be servable in this form.
+    /// </summary>
+    public static JsonObject BuildVcJson(
+        string issuerDid, string keyId, string subjectDid,
+        IReadOnlyList<string> types, JsonObject credentialSubjectClaims, TimeSpan validity,
+        JsonObject? credentialStatus = null, string? credentialId = null, IReadOnlyList<string>? additionalContexts = null)
+    {
+        var (_, payload) = BuildVcParts(issuerDid, keyId, subjectDid, types, credentialSubjectClaims, validity, credentialStatus, credentialId, additionalContexts);
+        return (JsonObject)payload["vc"]!.DeepClone();
+    }
+
     public static string IssueJwtVc(
         Ed25519Key issuerKey, string issuerDid, string keyId, string subjectDid,
         IReadOnlyList<string> types, JsonObject credentialSubjectClaims, TimeSpan validity,

@@ -225,10 +225,18 @@ public static class ProtocolEndpoints
     // (D) Status list — W3C Bitstring StatusList (revocation).
     private static void MapStatusList(IEndpointRouteBuilder app)
     {
-        app.MapGet("/status-lists/revocation", async (StatusListService statusList) =>
+        app.MapGet("/status-lists/revocation", async (HttpContext ctx, StatusListService statusList) =>
         {
-            var jwt = await statusList.BuildStatusListCredentialJwtAsync();
-            return Results.Text(jwt, "application/jwt", Encoding.ASCII);
+            // EDC verifiers fetch this URL and parse the body as JSON-LD, so JSON is the default.
+            // The signed JWT form is served only when explicitly requested.
+            var accept = ctx.Request.Headers.Accept.ToString();
+            if (accept.Contains("application/jwt", StringComparison.OrdinalIgnoreCase))
+            {
+                var jwt = await statusList.BuildStatusListCredentialJwtAsync();
+                return Results.Text(jwt, "application/jwt", Encoding.ASCII);
+            }
+            var json = await statusList.BuildStatusListCredentialJsonAsync();
+            return Results.Json(json, contentType: "application/json");
         });
     }
 }
