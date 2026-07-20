@@ -48,7 +48,17 @@ public static class ProtocolIntegration
 
         services.AddScoped<VpVerifier>();
         services.AddScoped<BdrsDirectoryService>();
-        services.AddScoped<DcpIssuanceService>();
+        // Issuer:IncludeCredentialStatus=false omits credentialStatus from issued credentials, which
+        // disables revocation but avoids the IdentityHub(JWT)/EDC(JSON) status-list format conflict.
+        var includeStatus = !string.Equals(config["Issuer:IncludeCredentialStatus"], "false", StringComparison.OrdinalIgnoreCase);
+        services.AddScoped(sp => new DcpIssuanceService(
+            sp.GetRequiredService<IIssuerSigner>(),
+            sp.GetRequiredService<IParticipantStore>(),
+            sp.GetRequiredService<ICredentialStore>(),
+            sp.GetRequiredService<StatusListService>(),
+            sp.GetRequiredService<ICredentialDefinitionStore>(),
+            sp.GetRequiredService<ICredentialDeliveryService>(),
+            includeStatus));
         // Tracks holder-initiated DCP requests (issuerPid <-> holderPid) across the async delivery.
         services.AddSingleton<IssuanceRequestTracker>();
         return services;

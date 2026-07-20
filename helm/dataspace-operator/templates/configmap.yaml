@@ -8,4 +8,7 @@ data:
   ASPNETCORE_ENVIRONMENT: {{ .Values.env.ASPNETCORE_ENVIRONMENT | quote }}
   ASPNETCORE_URLS: "http://+:8080"
   Issuer__Did: {{ .Values.issuer.did | quote }}
+  # false omits credentialStatus from issued credentials (no revocation), avoiding the
+  # IdentityHub-expects-JWT vs EDC-expects-JSON conflict on the status-list URL.
+  Issuer__IncludeCredentialStatus: {{ .Values.issuer.includeCredentialStatus | default true | quote }}
   ConnectionStrings__ConnectionString: {{ include "dataspace-operator.connectionString" . | quote }}

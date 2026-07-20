@@ -17,7 +17,8 @@ public sealed class DcpIssuanceService(
     ICredentialStore credentials,
     StatusListService statusList,
     ICredentialDefinitionStore? definitions = null,
-    ICredentialDeliveryService? delivery = null)
+    ICredentialDeliveryService? delivery = null,
+    bool includeCredentialStatus = true)
 {
     public sealed record IssuedResult(string CredentialType, string Jwt, Guid Id, DeliveryStatus Delivery);
 
@@ -103,8 +104,12 @@ public sealed class DcpIssuanceService(
             validity = TimeSpan.FromDays(365);
         }
 
-        var index = await statusList.AllocateAsync(ct);
-        var status = statusList.StatusEntryFor(index);
+        // credentialStatus is opt-out: the tractusx IdentityHub validates the referenced status-list
+        // credential as a signed JWT while EDC's revocation service parses the same URL as JSON-LD.
+        // Both fetch it indistinguishably, so until that is reconciled a deployment can omit the
+        // status entry entirely (no revocation) to keep presentation + verification working.
+        var index = includeCredentialStatus ? await statusList.AllocateAsync(ct) : 0;
+        var status = includeCredentialStatus ? statusList.StatusEntryFor(index) : null;
         var jwt = await VerifiableCredentials.IssueJwtVcAsync(
             signer,
             subjectDid: holderDid,
