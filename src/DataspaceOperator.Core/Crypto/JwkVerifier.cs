@@ -19,9 +19,12 @@ public static class JwkVerifier
     {
         var input = Encoding.ASCII.GetBytes(signingInput);
         var kty = (string?)jwk["kty"];
+        // "EdDSA" is the JWS standard for Ed25519; some EDC/IdentityHub STS builds emit the
+        // non-standard alg name "Ed25519" — accept both. ES256 is P-256 (older wallet key type).
         return (alg, kty) switch
         {
             ("EdDSA", "OKP") => VerifyEd25519(jwk, input, signature),
+            ("Ed25519", "OKP") => VerifyEd25519(jwk, input, signature),
             ("ES256", "EC") => VerifyEs256(jwk, input, signature),
             _ => false,
         };
