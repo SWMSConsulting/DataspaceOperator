@@ -22,8 +22,10 @@ public class Updater : ModuleUpdater {
     public override void UpdateDatabaseAfterUpdateSchema() {
         base.UpdateDatabaseAfterUpdateSchema();
 
-        // Seed governance: trust our own issuer for all credential types.
-        const string ownIssuerDid = "did:web:issuer.localhost";
+        // Seed governance: trust our own issuer for all credential types. The DID must match the
+        // configured issuer identity (Issuer:Did -> env Issuer__Did), not a build-time placeholder,
+        // otherwise the operator would not trust the credentials it issues itself.
+        var ownIssuerDid = Environment.GetEnvironmentVariable("Issuer__Did") ?? "did:web:issuer.localhost";
         // Known credential type names (pick list for a trusted issuer's SupportedTypes).
         SeedType("MembershipCredential");
         SeedType("DataExchangeGovernanceCredential");
