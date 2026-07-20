@@ -17,6 +17,7 @@ public class ParticipantEntity : BaseObject
     {
         // XAF EF Core change tracking requires INotifyCollectionChanged collections.
         Credentials = new ObservableCollection<IssuedCredentialEntity>();
+        AuditEntries = new ObservableCollection<AuditEntryEntity>();
     }
 
     public virtual string? Name { get; set; }
@@ -28,6 +29,31 @@ public class ParticipantEntity : BaseObject
 
     // 1-n: a participant accumulates many issued credentials over time
     public virtual IList<IssuedCredentialEntity> Credentials { get; set; }
+
+    // 1-n: every protocol call this participant made against the central service
+    public virtual IList<AuditEntryEntity> AuditEntries { get; set; }
+}
+
+/// <summary>
+/// Audit trail: one entry per call against a protocol endpoint of the central service. Entries that
+/// can be attributed to a participant hang off <see cref="ParticipantEntity.AuditEntries"/>;
+/// unattributable calls (e.g. an anonymous DID-document read) are kept with no participant.
+/// </summary>
+[DefaultClassOptions]
+[System.ComponentModel.DefaultProperty(nameof(Kind))]
+public class AuditEntryEntity : BaseObject
+{
+    public virtual DateTime TimestampUtc { get; set; }
+    public virtual string? Kind { get; set; }          // e.g. "DCP credential request"
+    public virtual string? Method { get; set; }        // GET / POST
+    public virtual string? Path { get; set; }          // incl. query string
+    public virtual int StatusCode { get; set; }
+    public virtual long DurationMs { get; set; }
+    public virtual string? ParticipantDid { get; set; } // kept even when no participant matched
+    public virtual string? RequestBody { get; set; }
+    public virtual string? Detail { get; set; }
+
+    public virtual ParticipantEntity? Participant { get; set; }
 }
 
 [DefaultClassOptions]

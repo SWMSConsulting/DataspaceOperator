@@ -61,7 +61,36 @@ public static class ProtocolIntegration
             includeStatus));
         // Tracks holder-initiated DCP requests (issuerPid <-> holderPid) across the async delivery.
         services.AddSingleton<IssuanceRequestTracker>();
+        // Audit trail over the protocol endpoints.
+        services.AddScoped<IAuditStore, XafAuditStore>();
         return services;
+    }
+}
+
+/// <summary>
+/// Persists the audit trail as XAF objects, linking each entry to the participant it belongs to
+/// (matched by DID) so it shows up as a 1-n collection on the participant.
+/// </summary>
+public sealed class XafAuditStore(INonSecuredObjectSpaceFactory factory) : IAuditStore
+{
+    public Task AddAsync(AuditRecord record, CancellationToken ct = default)
+    {
+        using var os = factory.CreateNonSecuredObjectSpace(typeof(AuditEntryEntity));
+        var e = os.CreateObject<AuditEntryEntity>();
+        e.TimestampUtc = record.TimestampUtc.UtcDateTime;
+        e.Kind = record.Kind;
+        e.Method = record.Method;
+        e.Path = record.Path;
+        e.StatusCode = record.StatusCode;
+        e.DurationMs = record.DurationMs;
+        e.ParticipantDid = record.ParticipantDid;
+        e.RequestBody = record.RequestBody;
+        e.Detail = record.Detail;
+        if (!string.IsNullOrEmpty(record.ParticipantDid))
+            e.Participant = os.GetObjectsQuery<ParticipantEntity>()
+                .FirstOrDefault(p => p.Did == record.ParticipantDid);
+        os.CommitChanges();
+        return Task.CompletedTask;
     }
 }
 

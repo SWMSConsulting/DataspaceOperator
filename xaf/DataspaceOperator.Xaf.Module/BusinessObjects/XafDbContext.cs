@@ -29,6 +29,7 @@ public class XafEFCoreDbContext : DbContext {
     public DbSet<CredentialDefinitionEntity> CredentialDefinitions { get; set; }
     public DbSet<IssuedCredentialEntity> IssuedCredentials { get; set; }
     public DbSet<StatusListStateEntity> StatusListState { get; set; }
+    public DbSet<AuditEntryEntity> AuditEntries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder) {
         base.OnModelCreating(modelBuilder);

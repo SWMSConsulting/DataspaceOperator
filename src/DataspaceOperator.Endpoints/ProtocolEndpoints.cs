@@ -60,8 +60,10 @@ public static class ProtocolEndpoints
             if (!verification.Success)
             {
                 log.LogWarning("BDRS read rejected: {Error}", verification.Error);
+                ctx.Items[AuditMiddleware.DetailKey] = $"rejected: {verification.Error}";
                 return Results.Json(new { error = verification.Error }, statusCode: StatusCodes.Status401Unauthorized);
             }
+            ctx.Items[AuditMiddleware.DidKey] = verification.HolderDid;
             var map = await bdrs.GetDirectoryAsync(ct);
             log.LogInformation("BDRS read authorized for holder {Holder}; directory: {Map}",
                 verification.HolderDid, string.Join("; ", map.Select(kv => $"{kv.Key}={kv.Value}")));
@@ -93,9 +95,13 @@ public static class ProtocolEndpoints
         // Membership Credential" UI action drives; exposed here so issuance can also be kicked off
         // by an operator over HTTP.
         app.MapPost("/api/issuance/offer", async (
-            string holderDid, string? type, ICredentialOfferService offers, CancellationToken ct) =>
+            HttpContext ctx, string holderDid, string? type, ICredentialOfferService offers, CancellationToken ct) =>
         {
+            ctx.Items[AuditMiddleware.DidKey] = holderDid;
             var res = await offers.SendOfferAsync(holderDid, type ?? "MembershipCredential", ct);
+            ctx.Items[AuditMiddleware.DetailKey] = res.Success
+                ? $"offer delivered to {res.Endpoint}"
+                : $"offer failed: {res.Error}";
             return res.Success
                 ? Results.Ok(new { offered = holderDid, endpoint = res.Endpoint })
                 : Results.Json(new { error = res.Error, endpoint = res.Endpoint }, statusCode: 502);
@@ -128,12 +134,19 @@ public static class ProtocolEndpoints
             // verify the holder self-issued token: iss==sub==holder DID, aud==our DID, did:web signature.
             var verified = await SelfIssuedToken.VerifyAsync(token, signer.IssuerDid, didResolver, ct);
             if (verified is null)
+            {
+                ctx.Items[AuditMiddleware.DetailKey] = "ID token verification failed";
                 return Results.Json(new { error = "ID token verification failed" }, statusCode: 401);
+            }
             var holderDid = verified.Issuer;
+            ctx.Items[AuditMiddleware.DidKey] = holderDid;
 
             var participant = await participants.GetByDidAsync(holderDid, ct);
             if (participant is null)
+            {
+                ctx.Items[AuditMiddleware.DetailKey] = $"unknown participant '{holderDid}'";
                 return Results.Json(new { error = $"unknown participant '{holderDid}'" }, statusCode: 401);
+            }
 
             // The message may arrive as compact OR expanded JSON-LD (EDC transformers emit expanded).
             var holderPid = DcpJsonLd.Str(body, "holderPid");

@@ -104,6 +104,8 @@ public class Startup {
         app.UseAuthorization();
         app.UseAntiforgery();
         app.UseXaf();
+        // Record every protocol-endpoint call into the operator's audit trail.
+        app.UseDataspaceAudit();
         app.UseEndpoints(endpoints => {
             // Dataspace protocol endpoints (did:web, BDRS directory, DCP issuance, status list)
             endpoints.MapDataspaceProtocol();
