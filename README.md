@@ -88,6 +88,7 @@ TrustedIssuerEntity, IssuedCredentialEntity**. Der Issuer-Schlüssel/-DID kommt 
 
 ## Technische Dokumentation
 
+- **Gesamtsetup Alice & Bob + DCP-Protokoll (mit Mermaid-Sequenzdiagrammen):** [`docs/gesamtsetup-alice-bob-dcp.md`](docs/gesamtsetup-alice-bob-dcp.md)
 - **Projektübersicht & Abhängigkeitsgraph:** [`docs/architektur-dotnet.md`](docs/architektur-dotnet.md)
 - **Pro Projekt** (Typen, Verantwortlichkeiten, Einordnung):
   - [`src/DataspaceOperator.Core`](src/DataspaceOperator.Core/README.md)
