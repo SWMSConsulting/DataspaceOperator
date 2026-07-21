@@ -14,8 +14,8 @@ Grundlage: die Konzept-Dokumente in `tractusx-edc/docs/`
 DataspaceOperator.Core        (net8)  Krypto + Protokoll + Domäne — FRAMEWORK-UNABHÄNGIG, kein DevExpress
 DataspaceOperator.Endpoints   (net8)  ASP.NET-Core Minimal-API-Mapper der 4 Protokoll-Endpoints
 DataspaceOperator.ProtocolHost(net10) lauffähiger Kestrel-Host mit In-Memory-Stores (Demo/Tests)
-DataspaceOperator.Core.Tests  (net10) 12 Tests: Krypto-Round-Trip, VP-Verifikation, E2E-HTTP
-xaf/DataspaceOperator.Xaf.*   (net8)  DevExpress XAF 26.1.3 Blazor-Admin-UI + EF-Core-Persistenz,
+DataspaceOperator.Core.Tests  (net10) 19 Tests: Krypto-Round-Trip, VP-Verifikation, E2E-HTTP
+xaf/DataspaceOperator.Xaf.*   (net10)  DevExpress XAF 26.1.3 Blazor-Admin-UI + EF-Core-Persistenz,
                                       hostet dieselben Protokoll-Endpoints (Stores über XAF-ObjectSpace)
 ```
 
@@ -80,16 +80,37 @@ TrustedIssuerEntity, IssuedCredentialEntity**. Der Issuer-Schlüssel/-DID kommt 
 
 ## Verifikationsstand
 
-- ✅ `Core`/`Endpoints`/`ProtocolHost`/Tests: Build grün, **12/12 Tests** (inkl. vollem
+- ✅ `Core`/`Endpoints`/`ProtocolHost`/Tests: Build grün, **19/19 Tests** (inkl. vollem
   E2E über HTTP: Membership-VC ausstellen → VP → BDRS-Read liefert gzip-Map mit BPN↔DID).
 - ✅ XAF-Solution (DevExpress 26.1.3): Build grün; DB angelegt + geseedet; die **laufende
   XAF-App liefert alle 4 Protokoll-Endpoints** (did.json, VCI-Metadata, StatusList,
   BDRS→401 ohne VP) aus dem XAF-ObjectSpace.
 
-## Offene/Nächste Schritte
+## Technische Dokumentation
 
-- Onboarding-`ViewController` (XAF-Action) auf Basis des Zustandsautomaten
-  (`docs/xaf-solution-und-onboarding-de.md`).
-- Vollständiger DCP-Issuance-Handshake (statt vereinfachter synchroner Ausstellung).
-- Live-Capture des echten BDRS-/DCP-Wire-Traffics aus MXD zur Feinjustierung.
-- Persistente Issuer-Schlüsselverwaltung (Secret Store statt appsettings-Seed).
+- **Projektübersicht & Abhängigkeitsgraph:** [`docs/architektur-dotnet.md`](docs/architektur-dotnet.md)
+- **Pro Projekt** (Typen, Verantwortlichkeiten, Einordnung):
+  - [`src/DataspaceOperator.Core`](src/DataspaceOperator.Core/README.md)
+  - [`src/DataspaceOperator.Endpoints`](src/DataspaceOperator.Endpoints/README.md)
+  - [`src/DataspaceOperator.ProtocolHost`](src/DataspaceOperator.ProtocolHost/README.md)
+  - [`tests/DataspaceOperator.Core.Tests`](tests/DataspaceOperator.Core.Tests/README.md)
+  - [`xaf/DataspaceOperator.Xaf.Module`](xaf/DataspaceOperator.Xaf.Module/README.md)
+  - [`xaf/DataspaceOperator.Xaf.Blazor.Server`](xaf/DataspaceOperator.Xaf.Blazor.Server/README.md)
+- **Betrieb, Neuaufbau, Abläufe (einfache Sprache):** [`docs/dataspace-betrieb-und-aufbau.md`](docs/dataspace-betrieb-und-aufbau.md)
+- **Deploy-Reihenfolge + Teilnehmer-Manifeste:** [`docs/DEPLOY.md`](docs/DEPLOY.md), [`deploy/participants/`](deploy/participants/)
+
+## Erreichter Stand (live verifiziert)
+
+- **Echte holder-initiierte DCP-Ausstellung** in tractusx-IdentityHub-Wallets (Offer → Request → Deliver).
+- **Dezentraler Aufbau:** je Teilnehmer eigener Stack (Vault + Postgres + IdentityHub + Connector);
+  die Zentrale ist ausschließlich Issuer + BDRS und hält **keine** Teilnehmer-Secrets.
+- **Alice→Bob-Dateiaustausch** über das öffentliche Internet (Katalog → Negotiation → Transfer → Pull).
+- **Audit-Trail** über alle Protokoll-Aufrufe (1-n am Teilnehmer).
+- **Härtung:** Offer-Endpoint per Operator-API-Key geschützt; alle Default-Credentials rotiert.
+
+## Bewusst offen
+
+- Widerruf deaktiviert (`Issuer:IncludeCredentialStatus=false`): IdentityHub erwartet die
+  Status-Liste als JWT, EDC als JSON — gleiche URL, ununterscheidbare Requests.
+- Teilnehmer-Vault im Dev-Modus (flüchtig); der **zentrale** Dienst ist davon nicht betroffen
+  (SQLite auf PVC + Issuer-Schlüssel im K8s-Secret).
