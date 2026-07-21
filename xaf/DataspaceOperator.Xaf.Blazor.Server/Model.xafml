@@ -1,10 +1,19 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Application>
+<?xml version="1.0" encoding="utf-8"?>
+<Application Title="Dataspace Operator">
   <Options UIType="TabbedMDI"
          FormStyle="Ribbon"
          RestoreTabbedMdiLayout="True"
          ShowTabImage="True"
 	 VirtualScrollingEnabled="True">
   </Options>
-  <NavigationItems NavigationStyle="Accordion" />
+  <!-- Navigation category order + group icons. The groups are created from the
+       [NavigationItem("...")] attributes on the business objects; here we only order them and give
+       each group an icon. Item order within a group follows the class declaration order. -->
+  <NavigationItems NavigationStyle="Accordion">
+    <Items>
+      <Item Id="Dataspace" Index="0" ImageName="BO_Organization" />
+      <Item Id="Governance" Index="1" ImageName="BO_Security_Permission" />
+      <Item Id="Audit" Index="2" ImageName="BO_Audit_ChangeHistory" />
+    </Items>
+  </NavigationItems>
 </Application>

@@ -24,6 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Write the DevExpress license into a file in the build context. The secret is passed via the
+      # step environment (not string-interpolated into the command line), so the license content —
+      # which contains $, backticks and parentheses — is written byte-for-byte without shell mangling.
+      - name: Write DevExpress license file
+        env:
+          DEVEXPRESS_LICENSE: ${{ secrets.DEVEXPRESS_LICENSE }}
+        run: printf '%s' "$DEVEXPRESS_LICENSE" > DevExpress_License.txt
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -50,5 +58,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            DevExpress_License=${{ secrets.DEVEXPRESS_LICENSE }}

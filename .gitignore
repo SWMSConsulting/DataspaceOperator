@@ -46,3 +46,6 @@ Thumbs.db
 
 # Helm fetched subcharts (re-fetched via `helm dependency build`)
 helm/**/charts/*.tgz
+
+# DevExpress license (written from the DEVEXPRESS_LICENSE secret at build time; never commit)
+DevExpress_License.txt

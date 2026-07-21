@@ -2,14 +2,19 @@
 ARG DOTNET_VERSION=10.0
 
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
-# DevExpress license for the build. For v25.1+ packages restore from nuget.org, but the build
-# still needs the license key injected (exact casing "DevExpress_License").
-# Pass it: docker build --build-arg DevExpress_License=<YOUR_KEY> ...
-ARG DevExpress_License
-ENV DevExpress_License=${DevExpress_License}
 # Release omits the dev Admin/User seeding (#if !RELEASE). Use Debug for an evaluation image
 # that seeds default users. Build: --build-arg BUILD_CONFIGURATION=Debug
 ARG BUILD_CONFIGURATION=Release
+
+# DevExpress license as a FILE (the build-arg/env-var route is NOT honoured by the DevExpress
+# build tooling and yields watermarked evaluation builds). On Linux the license is read from
+# $HOME/.config/DevExpress/DevExpress_License.txt. The CI workflow writes the DEVEXPRESS_LICENSE
+# secret into DevExpress_License.txt in the build context (never committed, .gitignore'd, and
+# only present in this build stage — it is not copied into the runtime image below).
+USER root
+RUN mkdir -p /root/.config/DevExpress
+COPY DevExpress_License.txt /root/.config/DevExpress/DevExpress_License.txt
+RUN echo "DevExpress license file: $(wc -c < /root/.config/DevExpress/DevExpress_License.txt) bytes"
 
 WORKDIR /src
 COPY . .
