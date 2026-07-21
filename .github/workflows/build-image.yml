@@ -21,6 +21,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # The DEVEXPRESS_LICENSE secret lives in the "secret" environment, so the job must reference it —
+    # otherwise ${{ secrets.DEVEXPRESS_LICENSE }} resolves to empty and the build is watermarked eval.
+    environment: secret
     steps:
       - uses: actions/checkout@v4
 

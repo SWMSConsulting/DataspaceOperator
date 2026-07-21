@@ -14,7 +14,15 @@ ARG BUILD_CONFIGURATION=Release
 USER root
 RUN mkdir -p /root/.config/DevExpress
 COPY DevExpress_License.txt /root/.config/DevExpress/DevExpress_License.txt
-RUN echo "DevExpress license file: $(wc -c < /root/.config/DevExpress/DevExpress_License.txt) bytes"
+RUN bytes=$(wc -c < /root/.config/DevExpress/DevExpress_License.txt); \
+    echo "DevExpress license file: ${bytes} bytes"; \
+    if [ "${bytes}" -lt 32 ]; then \
+      echo "############################################################################"; \
+      echo "## WARNING: DevExpress license is EMPTY -> this is an EVALUATION build.    ##"; \
+      echo "## Set the repository secret DEVEXPRESS_LICENSE to your license file       ##"; \
+      echo "## content (Settings -> Secrets and variables -> Actions).                 ##"; \
+      echo "############################################################################"; \
+    fi
 
 WORKDIR /src
 COPY . .
