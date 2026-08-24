@@ -62,14 +62,17 @@ public sealed class DcpIssuanceService(
         DateTimeOffset? deliveredUtc = null;
         if (delivery is not null)
         {
-            // brief settle so the holder finishes transitioning its request to REQUESTED
-            await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
-            for (var attempt = 0; attempt < 6; attempt++)
+            // The holder leases its HolderCredentialRequest while its state machine works on it and
+            // answers 409 "currently leased" until the lease is released. EDC's default lease is 60s,
+            // so the retry window has to outlast that - the previous ~10s always ran out first and
+            // the credential was never delivered. Backs off from 2s to 10s, ~2 minutes in total.
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+            for (var attempt = 0; attempt < 20; attempt++)
             {
                 last = await delivery.DeliverAsync(
                     holderDid, [new CredentialToDeliver(credentialType, jwt)], issuerPid, holderPid, ct);
                 if (last.Success) { deliveryStatus = DeliveryStatus.Delivered; deliveredUtc = DateTimeOffset.UtcNow; break; }
-                await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(2 + attempt, 10)), ct);
             }
         }
 
