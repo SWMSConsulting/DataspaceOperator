@@ -16,6 +16,21 @@ data:
     GRANT ALL PRIVILEGES ON DATABASE ih TO edc;
     GRANT ALL PRIVILEGES ON DATABASE edc TO edc;
 ---
+# Persistenz: ohne PVC verliert Postgres bei jedem Pod-Neustart (Node-Wechsel,
+# Eviction, Update) saemtliche Datenbanken. Der Connector faengt das NICHT ab --
+# Flyway legt das Schema nur beim Boot an, ein laufender Pod merkt den Verlust nie.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dave-postgres-data
+  namespace: windx-dave
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: csi-cinder-high-speed
+  resources:
+    requests:
+      storage: 2Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,7 +66,8 @@ spec:
         - name: initdb
           configMap: { name: dave-postgres-init }
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: dave-postgres-data
 ---
 apiVersion: v1
 kind: Service

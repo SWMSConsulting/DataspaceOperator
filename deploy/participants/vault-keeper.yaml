@@ -1,0 +1,121 @@
+# =============================================================================
+# vault-keeper  --  Wiederherstellung der Vault-Secrets nach einem Pod-Neustart
+#
+# WARUM DAS EXISTIERT
+# -------------------
+# Die Teilnehmer-Vaults laufen im Dev-Modus (In-Memory). Jeder Pod-Neustart --
+# Node-Wechsel, Eviction, OOM, Image-Update -- loescht saemtliche Secrets:
+# Signing-Key, STS-Client-Secret, IdentityHub-Superuser-Key.
+#
+# Der Ausfall ist STILL: IdentityHub und Connector laufen weiter und melden sich
+# Ready, koennen aber keine Presentation mehr signieren. Sichtbar wird es erst am
+# fehlgeschlagenen Datenaustausch, oft Tage spaeter.
+#
+# Dieser Keeper vergleicht alle 10 s den Vault-Inhalt gegen ein Backup-Secret und
+# traegt Fehlendes nach. Er ueberschreibt NIE einen gesunden Vault: nur ein leerer
+# KV-Store (HTTP 404) loest die Wiederherstellung aus, jeder andere Fehler fuehrt
+# zum Ueberspringen der Runde.
+#
+# EINMALIGES SEEDING (pro Teilnehmer, vor dem ersten Apply):
+#   Das Secret 'vault-backup' muss eine Datei data.json mit dem Vault-Inhalt
+#   enthalten. Snapshot des laufenden Vault erzeugen:
+#
+#     NS=windx-dave; P=dave
+#     kubectl -n $NS exec deploy/$P-vault -- sh -c '
+#       for k in $(vault kv list -format=json secret | sed -e "s/[]\[\", ]//g" -e "/^$/d"); do
+#         printf "%s\t%s\n" "$k" "$(vault kv get -format=json secret/$k | jq -c .data.data)"
+#       done' > /tmp/vault-dump.tsv
+#     python3 -c "import json,sys;print(json.dumps({l.split(chr(9))[0]:json.loads(l.split(chr(9))[1]) for l in open('/tmp/vault-dump.tsv') if l.strip()}))" > /tmp/data.json
+#     kubectl -n $NS create secret generic vault-backup \
+#       --from-file=data.json=/tmp/data.json \
+#       --from-literal=vault-token="$(kubectl -n $NS get deploy $P-vault \
+#           -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="VAULT_DEV_ROOT_TOKEN_ID")].value}')"
+#     rm -f /tmp/vault-dump.tsv /tmp/data.json
+#
+#   Der Vault-Token liegt damit im selben Secret wie das Backup -- NICHT im Klartext
+#   in der Deployment-Spec, wie es die urspruengliche Handinstallation getan hat.
+#
+# DEPLOY (Platzhalter ersetzen):
+#   sed -e 's/__NS__/windx-dave/' -e 's/__PARTICIPANT__/dave/' vault-keeper.yaml \
+#     | kubectl apply -f -
+#
+# DAUERHAFTE LOESUNG
+# ------------------
+# Vault mit File-/Raft-Backend auf einem PVC statt '-dev', mit regulaerem Unseal.
+# Dieser Keeper ist ein Pflaster, keine Architektur -- er beseitigt die Fragilitaet
+# nicht, er macht sie nur selbstheilend.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-keeper-script
+  namespace: __NS__
+data:
+  keeper.py: |
+    import urllib.request, urllib.error, json, os, time
+    V=os.environ['VAULT_ADDR']; T=os.environ['VAULT_TOKEN']
+    backup=json.load(open('/backup/data.json'))
+    def req(method,path,body=None):
+        data=json.dumps(body).encode() if body is not None else None
+        r=urllib.request.Request(V+path,method=method,data=data,
+            headers={'X-Vault-Token':T,'Content-Type':'application/json'})
+        return urllib.request.urlopen(r,timeout=8)
+    def have():
+        try:
+            d=json.loads(req('LIST','/v1/secret/metadata').read())
+            return set(d['data']['keys'])
+        except urllib.error.HTTPError as e:
+            if e.code==404: return set()   # KV-Store leer -> alles wiederherstellen
+            return None                    # anderer HTTP-Fehler -> ueberspringen
+        except Exception:
+            return None                    # Vault (noch) nicht erreichbar -> ueberspringen
+    print('vault-keeper started, backup keys:',len(backup),flush=True)
+    while True:
+        try:
+            cur=have()
+            if cur is not None:
+                for k,v in backup.items():
+                    if k not in cur:
+                        req('POST','/v1/secret/data/'+k.replace('%','%25'),{'data':v})
+                        print('restored',k,flush=True)
+        except Exception as e:
+            print('keeper error:',e,flush=True)
+        time.sleep(10)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-keeper
+  namespace: __NS__
+  labels: { app: vault-keeper }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vault-keeper }
+  template:
+    metadata:
+      labels: { app: vault-keeper }
+    spec:
+      containers:
+        - name: keeper
+          image: python:3-alpine
+          command: ["python", "/script/keeper.py"]
+          env:
+            - name: VAULT_ADDR
+              value: "http://__PARTICIPANT__-vault:8200"
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-backup
+                  key: vault-token
+          volumeMounts:
+            - { name: backup, mountPath: /backup }
+            - { name: script, mountPath: /script }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { memory: 64Mi }
+      volumes:
+        - name: backup
+          secret: { secretName: vault-backup }
+        - name: script
+          configMap: { name: vault-keeper-script }
