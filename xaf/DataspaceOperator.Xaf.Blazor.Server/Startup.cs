@@ -78,6 +78,9 @@ public class Startup {
         // Dataspace protocol services (framework-independent core) backed by the XAF object space.
         services.AddDataspaceProtocol(Configuration);
 
+        // Keeps the SQLite WAL from growing without bound; see SqliteWalCheckpointService.
+        services.AddHostedService<SqliteWalCheckpointService>();
+
         var authentication = services.AddAuthentication(options => {
             options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
         });
