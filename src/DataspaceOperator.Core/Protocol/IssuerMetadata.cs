@@ -12,7 +12,13 @@ namespace DataspaceOperator.Core.Protocol;
 public sealed class IssuerMetadata(IIssuerSigner signer)
 {
     /// <summary>Credential types we can issue (id == type). Keep in sync with the trusted-issuer setup.</summary>
-    public static readonly string[] SupportedTypes = ["MembershipCredential", "DataExchangeGovernanceCredential"];
+    /// <remarks>
+    /// DSP 2025-1 requires all three: tractusx-edc asks for MembershipCredential, BpnCredential and
+    /// DataExchangeGovernanceCredential (TxDcpConstants.DEFAULT_SCOPES), and a counterparty that
+    /// presents fewer than requested is rejected with 401. DSP v0.8 only needed MembershipCredential.
+    /// </remarks>
+    public static readonly string[] SupportedTypes =
+        ["MembershipCredential", "BpnCredential", "DataExchangeGovernanceCredential"];
 
     // eclipse-edc CredentialProfile: "vc11-sl2021/jwt" maps to CredentialFormat.VC1_0_JWT.
     public const string Profile = "vc11-sl2021/jwt";
