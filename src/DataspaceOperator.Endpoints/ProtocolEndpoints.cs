@@ -167,9 +167,14 @@ public static class ProtocolEndpoints
             if (string.IsNullOrEmpty(holderPid))
                 return Results.Json(new { error = "holderPid is required" }, statusCode: 400);
 
-            var credentialType = ResolveRequestedType(body);
+            var credentialType = ResolveRequestedType(body) ?? tracker.OfferedType(holderDid);
             if (credentialType is null)
+            {
+                log.LogWarning("DCP request from {Holder} names no supported credential and no recent " +
+                               "offer is on record; body was: {Body}", holderDid, rawBody);
+                ctx.Items[AuditMiddleware.DetailKey] = "no supported credential requested";
                 return Results.Json(new { error = "no supported credential requested" }, statusCode: 400);
+            }
 
             var pending = tracker.Create(holderPid, holderDid, credentialType);
             log.LogInformation("DCP request: holder={Holder} holderPid={HolderPid} type={Type} -> issuerPid={IssuerPid}",
@@ -240,9 +245,10 @@ public static class ProtocolEndpoints
                 if (id is not null && IssuerMetadata.SupportedTypes.Contains(id))
                     return id;
             }
-            // A credential was requested but its id didn't match a known object: default to the
-            // primary supported type so the demo flow completes (the holder validates type at storage).
-            if (creds.Count > 0) return IssuerMetadata.SupportedTypes[0];
+            // Deliberately no fallback to a "primary" type here: the tractusx IdentityHub sends
+            // credentials: [{"id": null}], so a default would silently issue a MembershipCredential
+            // for every request, whatever was actually offered. The caller correlates on the
+            // outstanding offer instead.
         }
         // Fallback: a plain {credentialType} body (used by the local demo trigger).
         var t = DcpJsonLd.Str(request, "credentialType");

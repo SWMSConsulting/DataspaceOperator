@@ -16,7 +16,8 @@ namespace DataspaceOperator.Core.Protocol;
 public sealed class HttpCredentialOfferService(
     IDidResolver didResolver,
     IIssuerSigner signer,
-    HttpClient http) : ICredentialOfferService
+    HttpClient http,
+    IssuanceRequestTracker tracker) : ICredentialOfferService
 {
     public async Task<OfferResult> SendOfferAsync(string holderDid, string credentialType, CancellationToken ct = default)
     {
@@ -58,7 +59,13 @@ public sealed class HttpCredentialOfferService(
         try
         {
             using var response = await http.SendAsync(request, ct);
-            if (response.IsSuccessStatusCode) return OfferResult.Ok(url);
+            if (response.IsSuccessStatusCode)
+            {
+                // The holder's follow-up CredentialRequestMessage does not name the credential type
+                // (see IssuanceRequestTracker.RememberOffer), so record it here for correlation.
+                tracker.RememberOffer(holderDid, credentialType);
+                return OfferResult.Ok(url);
+            }
             var body = await response.Content.ReadAsStringAsync(ct);
             return OfferResult.Fail(url, $"HTTP {(int)response.StatusCode}: {body}");
         }

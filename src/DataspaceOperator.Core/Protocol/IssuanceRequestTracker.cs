@@ -25,6 +25,26 @@ public sealed class IssuanceRequestTracker
 
     private readonly ConcurrentDictionary<string, Pending> _byIssuerPid = new();
 
+    /// <summary>Credential type of the offer we last sent to a holder, keyed by holder DID.</summary>
+    private readonly ConcurrentDictionary<string, (string Type, DateTimeOffset At)> _offeredType = new();
+
+    /// <summary>How long an unanswered offer stays usable for correlating an incoming request.</summary>
+    private static readonly TimeSpan OfferTtl = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Remember which credential type we offered a holder. The tractusx IdentityHub does not echo
+    /// the credential-object id back in its <c>CredentialRequestMessage</c> - it sends
+    /// <c>credentials: [{"id": null}]</c> - so the request alone cannot say what was asked for.
+    /// Correlating on the offer we just sent is what makes anything other than the first supported
+    /// type issuable at all.
+    /// </summary>
+    public void RememberOffer(string holderDid, string credentialType) =>
+        _offeredType[holderDid] = (credentialType, DateTimeOffset.UtcNow);
+
+    /// <summary>Credential type most recently offered to this holder, if the offer is still fresh.</summary>
+    public string? OfferedType(string holderDid) =>
+        _offeredType.TryGetValue(holderDid, out var e) && DateTimeOffset.UtcNow - e.At < OfferTtl ? e.Type : null;
+
     public Pending Create(string holderPid, string holderDid, string credentialType)
     {
         var issuerPid = Guid.NewGuid().ToString();
