@@ -31,15 +31,15 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.10.0">
       <ExcludeAssets>contentFiles</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.18" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="8.0.18" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.18" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.18">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.30" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Proxies" Version="8.0.30" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.30" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.30">
       <PrivateAssets>none</PrivateAssets>
       <IncludeAssets>all</IncludeAssets>
     </PackageReference>
     <PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.15" NoWarn="NU1510" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.18" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.30" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\DataspaceOperator.Core\DataspaceOperator.Core.csproj" />

@@ -24,7 +24,7 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.10.0">
       <ExcludeAssets>contentFiles</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.18" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.30" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DataspaceOperator.Xaf.Module\DataspaceOperator.Xaf.Module.csproj" />
