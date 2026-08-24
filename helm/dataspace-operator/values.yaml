@@ -55,7 +55,10 @@ database:
 
 persistence:
   enabled: true
-  size: 1Gi
+  # 1Gi was not enough: the SQLite WAL grew to ~990 MB and filled the volume, after which the
+  # schema/seed step in the db-migrate init container could no longer write and the pod would not
+  # start (2026-08-24). Keep headroom well above the WAL, and watch the WAL size.
+  size: 5Gi
   storageClass: ""
   mountPath: /app/data
 
