@@ -1,0 +1,50 @@
+# =============================================================================
+# HashiCorp Vault (dev-mode) for participant DAVE  -- namespace windx-dave
+# SHARED by dave-ih (IdentityHub) AND dave-edc (connector).
+# Reachable in-cluster at:  http://dave-vault:8200
+# Apply with:  kubectl -n windx-dave apply -f vault-dave.yaml
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dave-vault
+  namespace: windx-dave
+  labels: { app: dave-vault }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: dave-vault }
+  template:
+    metadata:
+      labels: { app: dave-vault }
+    spec:
+      containers:
+        - name: vault
+          image: hashicorp/vault:1.17
+          args: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200"]
+          env:
+            - name: VAULT_DEV_ROOT_TOKEN_ID
+              value: "CHANGE-ME-VAULT-TOKEN"
+            - name: VAULT_DEV_LISTEN_ADDRESS
+              value: "0.0.0.0:8200"
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+          ports:
+            - { containerPort: 8200, name: http }
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          readinessProbe:
+            httpGet: { path: /v1/sys/health, port: 8200 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dave-vault
+  namespace: windx-dave
+spec:
+  selector: { app: dave-vault }
+  ports:
+    - { name: http, port: 8200, targetPort: 8200 }

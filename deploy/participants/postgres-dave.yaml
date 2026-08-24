@@ -1,0 +1,64 @@
+# =============================================================================
+# PostgreSQL for participant DAVE  -- namespace windx-dave
+# Databases: edc (connector dave-edc), ih (IdentityHub dave-ih)
+# Credentials: user=edc password=edc
+# Reachable in-cluster at:  dave-postgres:5432
+# Apply with:  kubectl -n windx-dave apply -f postgres-dave.yaml
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dave-postgres-init
+  namespace: windx-dave
+data:
+  01-create-ih.sql: |
+    CREATE DATABASE ih;
+    GRANT ALL PRIVILEGES ON DATABASE ih TO edc;
+    GRANT ALL PRIVILEGES ON DATABASE edc TO edc;
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dave-postgres
+  namespace: windx-dave
+  labels: { app: dave-postgres }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: dave-postgres }
+  template:
+    metadata:
+      labels: { app: dave-postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          env:
+            - { name: POSTGRES_USER,     value: "edc" }
+            - { name: POSTGRES_PASSWORD, value: "edc" }
+            - { name: POSTGRES_DB,       value: "edc" }
+            - { name: PGDATA,            value: "/var/lib/postgresql/data/pgdata" }
+          ports:
+            - { containerPort: 5432, name: postgres }
+          volumeMounts:
+            - { name: initdb, mountPath: /docker-entrypoint-initdb.d }
+            - { name: data,   mountPath: /var/lib/postgresql/data }
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "edc"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: initdb
+          configMap: { name: dave-postgres-init }
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dave-postgres
+  namespace: windx-dave
+spec:
+  selector: { app: dave-postgres }
+  ports:
+    - { name: postgres, port: 5432, targetPort: 5432 }

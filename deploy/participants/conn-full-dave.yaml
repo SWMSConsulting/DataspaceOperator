@@ -1,0 +1,119 @@
+# =============================================================================
+# Helm values: tractusx-edc/tractusx-connector  0.12.1   (participant DAVE)
+# Release name MUST be:  dave-edc
+#   helm upgrade --install dave-edc tractusx-edc/tractusx-connector \
+#     --version 0.12.1 -n windx-dave -f conn-full-dave.yaml
+#
+# Difference to alice/bob: the DATA-PLANE runs the custom Wind-X image
+#   ghcr.io/wind-x-eu/edc-dataplane-windx  (offizielle SQL/Vault data-plane
+#   + windx-mediator-proxy / windx-mms / windx-participant-log /
+#     non-finite-provider-push). Control-plane stays upstream & unchanged.
+#
+# Shares the SAME per-participant Vault + Postgres as dave-ih:
+#   Vault   : http://dave-vault:8200  token=<generated>
+#   Postgres: dave-postgres:5432  db=edc  user/pass=edc/edc
+# =============================================================================
+
+fullnameOverride: "dave-edc"
+
+install:
+  postgresql: false
+  vault: false
+
+# Pull secret for the private ghcr.io/wind-x-eu data-plane image.
+# Create once:  kubectl -n windx-dave create secret docker-registry ghcr-windx \
+#   --docker-server=ghcr.io --docker-username=<gh-user> --docker-password=<PAT-read:packages>
+imagePullSecrets:
+  - name: ghcr-windx
+
+participant:
+  id: "BPNL00000000WD04"
+  contextId: "did:web:dave-windx.cluster.swms-cloud.com"
+
+iatp:
+  id: "did:web:dave-windx.cluster.swms-cloud.com"
+  trustedIssuers:
+    - id: "did:web:auth-windx.cluster.swms-cloud.com"
+      supportedTypes:
+        - "MembershipCredential"
+  sts:
+    oauth:
+      token_url: "http://dave-ih:8087/api/sts/token"
+      client:
+        id: "did:web:dave-windx.cluster.swms-cloud.com"
+        secret_alias: "did:web:dave-windx.cluster.swms-cloud.com-sts-client-secret"
+
+controlplane:
+  bdrs:
+    server:
+      url: "https://auth-windx.cluster.swms-cloud.com/api/directory"
+    cache_validity_seconds: 600
+  endpoints:
+    management:
+      authKey: "CHANGE-ME-MANAGEMENT-KEY"
+  ingresses:
+    - enabled: true
+      hostname: "dave-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - protocol
+      tls:
+        enabled: true
+        secretName: "dave-edc-tls"
+      certManager:
+        clusterIssuer: "letsencrypt-prod"
+    - enabled: false
+      hostname: "dave-edc.intranet"
+      endpoints:
+        - management
+        - control
+
+dataplane:
+  # ---- Wind-X custom data-plane image ----
+  image:
+    repository: "ghcr.io/wind-x-eu/edc-dataplane-windx"
+    tag: "latest"
+    pullPolicy: Always
+  # ---- Config required by the Wind-X extensions baked into the image ----
+  # windx-mediator-proxy REQUIRES this (no default) or the runtime aborts at boot.
+  # Point it at the Semantic Mediator once deployed; placeholder lets the
+  # data-plane boot and serve standard (non-mediator) transfers meanwhile.
+  env:
+    TX_EDC_WINDX_MEDIATOR_BASE_URL: "http://semanticmediator:3051"
+  token:
+    signer:
+      privatekey_alias: "did:web:dave-windx.cluster.swms-cloud.com#signing-key-1"
+    verifier:
+      publickey_alias: "did:web:dave-windx.cluster.swms-cloud.com#signing-key-1"
+  ingresses:
+    - enabled: true
+      hostname: "dave-edc-windx.cluster.swms-cloud.com"
+      className: "nginx"
+      endpoints:
+        - public
+      tls:
+        enabled: true
+        secretName: "dave-edc-tls"
+      certManager:
+        clusterIssuer: ""
+
+postgresql:
+  jdbcUrl: "jdbc:postgresql://dave-postgres:5432/edc"
+  auth:
+    database: "edc"
+    username: "edc"
+    password: "edc"
+
+vault:
+  injector:
+    enabled: false
+  hashicorp:
+    url: "http://dave-vault:8200"
+    token: "CHANGE-ME-VAULT-TOKEN"
+    timeout: 30
+    healthCheck:
+      enabled: true
+      standbyOk: true
+    paths:
+      secret: /v1/secret
+      health: /v1/sys/health
