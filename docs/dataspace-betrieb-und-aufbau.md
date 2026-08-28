@@ -4,6 +4,9 @@ Diese Doku beschreibt den kompletten Aufbau im Cluster: **was installiert ist**,
 genau passiert** und **wie man alles von Null neu aufsetzt**. Sprache bewusst einfach; alle
 Abkürzungen werden bei der ersten Nennung erklärt.
 
+> **Nur schnell einen Teilnehmer aufsetzen?** → [QUICKSTART.md](QUICKSTART.md) — dieselben
+> Schritte zum Kopieren, ohne Erklärungen dazwischen.
+
 ---
 
 ## 1. Abkürzungen (einmal in Ruhe)
@@ -38,12 +41,44 @@ Abkürzungen werden bei der ersten Nennung erklärt.
    Schlüssel geprüft, den man über die DID im Internet nachschlägt.
 5. Deshalb ist das Ganze **dezentral**: die Zentrale kennt **kein einziges Geheimnis** der Teilnehmer.
 
+```mermaid
+flowchart LR
+  subgraph Z["Zentrale (windx-auth)"]
+    I["Issuer<br/>stellt Ausweise aus"]
+    B["BDRS<br/>Telefonbuch BPN → DID"]
+  end
+
+  subgraph A["Alice"]
+    AW["Wallet + privater Schlüssel"]
+    AC["Connector"]
+  end
+
+  subgraph BO["Bob"]
+    BW["Wallet + privater Schlüssel"]
+    BC["Connector"]
+  end
+
+  I -->|"1· Mitgliedsausweis (VC)"| AW
+  I -->|"1· Mitgliedsausweis (VC)"| BW
+  AC -->|"2· Wer ist BPN…WB02?"| B
+  AC <-->|"3· Ausweise zeigen, Daten tauschen (DSP)"| BC
+  AW -.->|Token| AC
+  BW -.->|Token| BC
+
+  classDef zentrale fill:#e8eef7,stroke:#4a6fa5
+  class I,B zentrale
+```
+
+Die Zentrale ist nur an **1** und **2** beteiligt. Der eigentliche Datenaustausch (**3**) läuft
+direkt zwischen den Teilnehmern — sie prüfen sich gegenseitig selbst.
+
 ---
 
 ## 3. Was im Cluster läuft
 
-Drei Namespaces (`kubectl get ns | grep windx`). Jeder Teilnehmer ist vollständig autark —
-theoretisch könnte er bei einer ganz anderen Firma in einem anderen Rechenzentrum stehen.
+Vier Namespaces (`kubectl get ns | grep windx`): die Zentrale plus **drei Teilnehmer**
+(Alice, Bob, Dave). Jeder Teilnehmer ist vollständig autark — theoretisch könnte er bei einer
+ganz anderen Firma in einem anderen Rechenzentrum stehen.
 
 ### 3.1 Zentral: Namespace `windx-auth`
 
@@ -63,9 +98,9 @@ theoretisch könnte er bei einer ganz anderen Firma in einem anderen Rechenzentr
 Die Zentrale speichert: Teilnehmer (Name, BPN, DID), ausgestellte Credentials, vertrauenswürdige
 Aussteller und den **Audit-Trail**. Sie speichert **keine** privaten Schlüssel der Teilnehmer.
 
-### 3.2 Pro Teilnehmer: `windx-alice` bzw. `windx-bob`
+### 3.2 Pro Teilnehmer: `windx-alice`, `windx-bob`, `windx-dave`
 
-Jeder Namespace enthält **vier** Bausteine, die zusammengehören:
+Jeder Namespace enthält **fünf** Bausteine, die zusammengehören:
 
 | Baustein | Beispiel Alice | Wozu |
 |---|---|---|
@@ -73,6 +108,7 @@ Jeder Namespace enthält **vier** Bausteine, die zusammengehören:
 | **Postgres** | `alice-postgres` | Datenbank für IH und Connector |
 | **IdentityHub** | `alice-ih` | Alices Wallet: verwahrt VCs, stellt VPs aus, betreibt die STS |
 | **Connector** | `alice-edc-controlplane` + `alice-edc-dataplane` | Bietet Daten an bzw. ruft sie ab |
+| **vault-keeper** | `vault-keeper` | Spielt den Tresor-Inhalt nach einem Pod-Neustart automatisch zurück (siehe Abschnitt 7) |
 
 Öffentlich erreichbar:
 
@@ -81,7 +117,25 @@ Jeder Namespace enthält **vier** Bausteine, die zusammengehören:
 | `https://alice-windx.cluster.swms-cloud.com` | IdentityHub | DID-Dokument + Credential-Annahme/-Vorzeigen |
 | `https://alice-edc-windx.cluster.swms-cloud.com` | Connector | DSP (`/api/v1/dsp`) + Datenabruf (`/api/public`) |
 
-(Für Bob identisch mit `bob-…`.)
+(Für Bob und Dave identisch mit `bob-…` bzw. `dave-…`.)
+
+**Die drei Teilnehmer im Überblick:**
+
+| | Alice | Bob | Dave |
+|---|---|---|---|
+| Namespace | `windx-alice` | `windx-bob` | `windx-dave` |
+| BPN | `BPNL00000000WA01` | `BPNL00000000WB02` | `BPNL00000000WD04` |
+| DID | `did:web:alice-windx…` | `did:web:bob-windx…` | `did:web:dave-windx…` |
+| Rolle im Beispiel | Consumer | Provider (`bob-backend`) | dritter Teilnehmer |
+| Besonderheit | – | nginx als Beispiel-Datenquelle | **eigenes Dataplane-Image** (siehe unten) |
+
+> **Dave fährt eine andere Dataplane.** Statt des Upstream-Images läuft
+> `ghcr.io/wind-x-eu/edc-dataplane-windx` — die offizielle SQL/Vault-Dataplane plus die Wind-X-
+> Erweiterungen (`windx-mediator-proxy`, `windx-mms`, `windx-participant-log`,
+> `non-finite-provider-push`). Der Controlplane bleibt unverändert Upstream. Zwei Dinge sind
+> dabei Pflicht: das Pull-Secret `ghcr-windx` für die private Registry und die Variable
+> `TX_EDC_WINDX_MEDIATOR_BASE_URL` — **ohne sie startet der Pod nicht**. Details in
+> [DEPLOY.md](DEPLOY.md), Abschnitt „Besonderheit Dave".
 
 > **Wichtig:** Vault + IH + Connector eines Teilnehmers teilen sich **einen** Vault. Das ist
 > *innerhalb* eines Teilnehmers — nichts wird über Teilnehmergrenzen hinweg geteilt. Genau das
@@ -156,13 +210,16 @@ zugeordnet werden kann (über die DID), erscheint er im Admin-UI direkt **beim T
 
 ## 5. Frisch aufsetzen (von Null)
 
+> Für **einen einzelnen Teilnehmer** ist [QUICKSTART.md](QUICKSTART.md) der kürzere Weg —
+> dieselben Schritte, aber mit Variablen und ohne Zwischentext.
+
 Voraussetzungen: Kubernetes mit **nginx-Ingress** und **cert-manager** (ClusterIssuer
 `letsencrypt-prod`), DNS zeigt auf den Ingress, Helm installiert.
 
 ```bash
 helm repo add tractusx-edc https://eclipse-tractusx.github.io/charts/dev
 helm repo update
-kubectl create ns windx-auth; kubectl create ns windx-alice; kubectl create ns windx-bob
+kubectl create ns windx-auth; kubectl create ns windx-alice; kubectl create ns windx-bob; kubectl create ns windx-dave
 ```
 
 ### Schritt 1 — Zentrale
@@ -189,17 +246,24 @@ DID-Dokument liefern (inkl. `IssuerService`-Eintrag).
 ### Schritt 2 — Pro Teilnehmer: Vault + Postgres
 
 ```bash
-kubectl -n windx-alice apply -f vault-alice.yaml      # dev-mode, Root-Token "root"
-kubectl -n windx-alice apply -f postgres-alice.yaml   # DBs: ih + edc
+kubectl -n windx-alice apply -f vault-alice.yaml      # dev-mode, Token je Teilnehmer eigener Zufallswert
+kubectl -n windx-alice apply -f postgres-alice.yaml   # DBs: ih + edc, auf PVC
 ```
+
+> **Postgres muss auf einem PVC liegen, nicht auf `emptyDir`.** Sonst ist beim nächsten
+> Pod-Umzug die Identität des Teilnehmers weg — genau das ist am 23.08.2026 passiert
+> ([Vorfallbericht](vorfall-2026-08-23-identitaetsverlust.md)).
 
 Super-User-Schlüssel für die Verwaltungs-API des IH in den Vault legen:
 
 ```bash
 kubectl -n windx-alice exec deploy/alice-vault -- sh -c \
-  'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root \
-   vault kv put secret/sup3r\$3cr3t content="c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo="'
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+   vault kv put secret/sup3r\\\$3cr3t content=\"$SUPERUSER_KEY\""
 ```
+
+> Der Wert ist frei wählbar (`openssl rand -base64 24`) und derselbe, den du später als
+> `X-Api-Key` sendest. Der frühere MXD-Standardwert ist rotiert und nicht mehr gültig.
 
 ### Schritt 3 — IdentityHub (Wallet)
 
@@ -217,7 +281,7 @@ Erzeugt Alices Schlüsselpaar, ihr STS-Konto und ihr DID-Dokument. **Die Antwort
 kubectl -n windx-alice port-forward svc/alice-ih 8082:8082 &
 curl -X POST http://localhost:8082/api/identity/v1alpha/participants \
  -H 'Content-Type: application/json' \
- -H 'X-Api-Key: c3VwZXItdXNlcg==.c3VwZXItc2VjcmV0LWtleQo=' \
+ -H "X-Api-Key: $SUPERUSER_KEY" \
  -d '{
   "active": true,
   "did": "did:web:alice-windx.cluster.swms-cloud.com",
@@ -238,39 +302,58 @@ curl -X POST http://localhost:8082/api/identity/v1alpha/participants \
 ### Schritt 5 — Connector
 
 ```bash
-helm upgrade --install alice-edc <gepatchtes-chart>/tractusx-connector \
-  -n windx-alice -f conn-full-alice.yaml
+helm upgrade --install alice-edc tractusx-edc/tractusx-connector \
+  --version 0.12.1 -n windx-alice --server-side=false -f conn-full-alice.yaml
 ```
 
 > **Achtung, Chart-Fehler:** `tractusx-connector` 0.12.1 erzeugt doppelte `WEB_HTTP_CATALOG_*`-
-> Einträge. Bei Server-Side-Apply bricht das Deployment ab. Abhilfe: Chart lokal ziehen
-> (`helm pull … --untar`) und in `templates/deployment-controlplane.yaml` den **doppelten**
-> Catalog-/Federated-Catalog-Block entfernen.
+> Einträge. Helm 4 nutzt standardmäßig Server-Side-Apply und bricht daran ab
+> (`failed to create typed patch object`). Abhilfe ist schlicht **`--server-side=false`** —
+> Client-Side-Apply verträgt die Dubletten. Das Chart muss dafür *nicht* lokal gepatcht werden.
 
 > **Reihenfolge:** Die Dataplane meldet sich beim Controlplane an. Startet sie zuerst, geht sie
 > in CrashLoop — nach dem Hochlaufen des Controlplane fängt sie sich von selbst.
 
-### Schritt 6 — Teilnehmer zentral registrieren
+### Schritt 6 — Tresor-Sicherung einrichten
+
+Der Tresor läuft im Dev-Modus und hält alles nur im Arbeitsspeicher. Diese beiden Jobs machen
+einen Pod-Neustart überlebbar — **jetzt einrichten, nicht später**:
+
+```bash
+sed -e 's/__NS__/windx-alice/' -e 's/__PARTICIPANT__/alice/' \
+  deploy/participants/vault-seeder.yaml | kubectl apply -f -
+kubectl -n windx-alice wait --for=condition=complete job/vault-seeder --timeout=120s
+
+sed -e 's/__NS__/windx-alice/' -e 's/__PARTICIPANT__/alice/' \
+  deploy/participants/vault-keeper.yaml | kubectl apply -f -
+```
+
+`vault-seeder` schreibt den aktuellen Tresor-Inhalt in das Secret `vault-backup`,
+`vault-keeper` spielt ihn nach einem Neustart automatisch zurück. Beide laufen vollständig im
+Cluster — privates Schlüsselmaterial landet nie auf einem Arbeitsplatz. Der Seeder bricht ab,
+wenn der Tresor leer ist, damit er kein gutes Backup mit einem leeren überschreibt.
+
+### Schritt 7 — Teilnehmer zentral registrieren
 
 Im Admin-UI (`https://auth-windx.cluster.swms-cloud.com`) je einen Participant anlegen:
 
-| Feld | Alice | Bob |
-|---|---|---|
-| Bpn | `BPNL00000000WA01` | `BPNL00000000WB02` |
-| Did | `did:web:alice-windx.cluster.swms-cloud.com` | `did:web:bob-windx.cluster.swms-cloud.com` |
-| CredentialServiceUrl | `https://alice-windx…/api/credentials/v1/participants/<BASE64>` | analog |
+| Feld | Alice | Bob | Dave |
+|---|---|---|---|
+| Bpn | `BPNL00000000WA01` | `BPNL00000000WB02` | `BPNL00000000WD04` |
+| Did | `did:web:alice-windx.cluster.swms-cloud.com` | `did:web:bob-windx.cluster.swms-cloud.com` | `did:web:dave-windx.cluster.swms-cloud.com` |
+| CredentialServiceUrl | `https://alice-windx…/api/credentials/v1/participants/<BASE64>` | analog | analog |
 
 > Die **BPN muss überall exakt gleich** sein: hier, in `participant.id` des Connectors und im
 > Katalog-Aufruf. Ein Tippfehler führt zu „Empty optional" bei der Auflösung.
 
-### Schritt 7 — Credentials ausstellen
+### Schritt 8 — Credentials ausstellen
 
 Im Admin-UI beim Teilnehmer **„Issue Membership Credential"**. Kontrolle im IH-Log:
 `HolderCredentialRequest … is now in state ISSUED`.
 
-### Schritt 8 — Anbieter einrichten und testen
+### Schritt 9 — Anbieter einrichten und testen
 
-Auf Bobs Connector (Management-API, Standard-Key `password`) Asset, Policy und
+Auf Bobs Connector (Management-API, Key aus `controlplane.endpoints.management.authKey`) Asset, Policy und
 Contract-Definition anlegen; dann von Alice aus: Katalog → Negotiation → Transfer → Abruf.
 Die konkreten Aufrufe stehen in `DEPLOY.md`.
 
@@ -327,12 +410,19 @@ selbst kein einziges Teilnehmer-Geheimnis. Genau so ist der tractusx-Standardauf
 Die Dateien unter `deploy/participants/` enthalten bewusst **Platzhalter** (`CHANGE-ME-…`) — echte
 Werte gehören nicht ins Repository.
 
-**Weiterhin offen (bewusst):**
-- Der Vault läuft im `-dev`-Modus und hält seine Daten **nur im Arbeitsspeicher**. Startet der
-  Vault-Pod neu, sind der private Schlüssel und das STS-Secret des Teilnehmers weg; dann müssen
-  Schritt 4 (Teilnehmer anlegen) und Schritt 7 (Credential ausstellen) wiederholt werden — die
-  IH-Datenbank vorher zurücksetzen (`DROP DATABASE ih; CREATE DATABASE ih;`), sonst verweist sie
-  auf Schlüssel, die es nicht mehr gibt. Für Produktivbetrieb: Vault mit persistentem Storage.
+**Der Tresor läuft weiterhin im Dev-Modus** und hält seine Daten nur im Arbeitsspeicher. Das ist
+inzwischen aber **abgesichert**: `vault-seeder` legt ein Backup im Cluster ab, `vault-keeper`
+spielt es nach einem Pod-Neustart automatisch zurück (läuft in allen drei Namespaces). Ein
+Neustart kostet damit keine Identität mehr.
 
-**Versionen:** IdentityHub-Chart `0.3.2`, Connector-Chart `0.12.1` (lokal gepatcht) — zwei
+Dauerhaft richtig wäre trotzdem ein Vault mit File- oder Raft-Backend auf einem PVC und
+regulärem Unseal — der Keeper ist ein Pflaster, keine Lösung.
+
+**Weiterhin offen (bewusst):**
+- **Stiller Ausfall.** Bereitschaftsprüfungen melden `Ready`, auch wenn die Identität fehlt.
+  Ein Health-Check, der `did.json` und einen STS-Token-Abruf prüft, fehlt noch.
+- **Widerruf** ist ausgeschaltet (siehe oben).
+- **Vault im Dev-Modus** (siehe Absatz darüber).
+
+**Versionen:** IdentityHub-Chart `0.3.2`, Connector-Chart `0.12.1` (unverändert, mit `--server-side=false` installiert) — zwei
 verschiedene Release-Stränge. Beim Aktualisieren beide zusammen prüfen.

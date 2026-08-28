@@ -88,6 +88,7 @@ TrustedIssuerEntity, IssuedCredentialEntity**. Der Issuer-Schlüssel/-DID kommt 
 
 ## Technische Dokumentation
 
+- **Schnellstart — einen Teilnehmer aufsetzen (~20 Min, zum Kopieren):** [`docs/QUICKSTART.md`](docs/QUICKSTART.md)
 - **Gesamtsetup Alice & Bob + DCP-Protokoll (mit Mermaid-Sequenzdiagrammen):** [`docs/gesamtsetup-alice-bob-dcp.md`](docs/gesamtsetup-alice-bob-dcp.md)
 - **Projektübersicht & Abhängigkeitsgraph:** [`docs/architektur-dotnet.md`](docs/architektur-dotnet.md)
 - **Pro Projekt** (Typen, Verantwortlichkeiten, Einordnung):
@@ -98,13 +99,16 @@ TrustedIssuerEntity, IssuedCredentialEntity**. Der Issuer-Schlüssel/-DID kommt 
   - [`xaf/DataspaceOperator.Xaf.Module`](xaf/DataspaceOperator.Xaf.Module/README.md)
   - [`xaf/DataspaceOperator.Xaf.Blazor.Server`](xaf/DataspaceOperator.Xaf.Blazor.Server/README.md)
 - **Betrieb, Neuaufbau, Abläufe (einfache Sprache):** [`docs/dataspace-betrieb-und-aufbau.md`](docs/dataspace-betrieb-und-aufbau.md)
-- **Deploy-Reihenfolge + Teilnehmer-Manifeste:** [`docs/DEPLOY.md`](docs/DEPLOY.md), [`deploy/participants/`](deploy/participants/)
+- **Deploy-Referenz + Teilnehmer-Manifeste:** [`docs/DEPLOY.md`](docs/DEPLOY.md), [`deploy/participants/`](deploy/participants/)
+- **Vorfall 23.08.2026 — Identitätsverlust, Diagnosekette, Wiederherstellung:** [`docs/vorfall-2026-08-23-identitaetsverlust.md`](docs/vorfall-2026-08-23-identitaetsverlust.md)
 
 ## Erreichter Stand (live verifiziert)
 
 - **Echte holder-initiierte DCP-Ausstellung** in tractusx-IdentityHub-Wallets (Offer → Request → Deliver).
 - **Dezentraler Aufbau:** je Teilnehmer eigener Stack (Vault + Postgres + IdentityHub + Connector);
   die Zentrale ist ausschließlich Issuer + BDRS und hält **keine** Teilnehmer-Secrets.
+  Live sind **drei** Teilnehmer: Alice, Bob und Dave (`BPNL00000000WD04`, eigenes
+  Wind-X-Dataplane-Image).
 - **Alice→Bob-Dateiaustausch** über das öffentliche Internet (Katalog → Negotiation → Transfer → Pull).
 - **Audit-Trail** über alle Protokoll-Aufrufe (1-n am Teilnehmer).
 - **Härtung:** Offer-Endpoint per Operator-API-Key geschützt; alle Default-Credentials rotiert.
@@ -113,5 +117,6 @@ TrustedIssuerEntity, IssuedCredentialEntity**. Der Issuer-Schlüssel/-DID kommt 
 
 - Widerruf deaktiviert (`Issuer:IncludeCredentialStatus=false`): IdentityHub erwartet die
   Status-Liste als JWT, EDC als JSON — gleiche URL, ununterscheidbare Requests.
-- Teilnehmer-Vault im Dev-Modus (flüchtig); der **zentrale** Dienst ist davon nicht betroffen
-  (SQLite auf PVC + Issuer-Schlüssel im K8s-Secret).
+- Teilnehmer-Vault im Dev-Modus (flüchtig), aber durch `vault-seeder` + `vault-keeper`
+  neustartfest gemacht; der **zentrale** Dienst ist ohnehin nicht betroffen (SQLite auf PVC +
+  Issuer-Schlüssel im K8s-Secret).

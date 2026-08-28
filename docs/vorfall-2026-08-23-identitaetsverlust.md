@@ -61,20 +61,29 @@ Machine scheitert daran, dass kein Token zu bekommen ist.
 
 ## 3. Ursachenkette
 
+```mermaid
+flowchart TB
+  U["postgres-dave.yaml:<br/>volume &quot;data&quot; = emptyDir"]
+  N["Node-Wechsel 23.08.2026<br/><i>Cluster unter Speicherdruck, Evictions</i>"]
+  L["Postgres startet auf neuem Node<br/>DBs &quot;edc&quot; und &quot;ih&quot; leer"]
+  F["IdentityHub bootet gegen leere DB:<br/>Flyway legt nur das leere Schema an.<br/>Participant Context, Keypair,<br/>DID-Ressource, Credentials — weg."]
+  S1["kein DID-Dokument<br/><b>did.json = 204</b>"]
+  S2["kein STS-Client<br/><b>/api/sts/token = 401 invalid_client</b>"]
+  S3["keine MembershipCredential<br/><b>BDRS = 401</b>"]
+  R["Folgewirkung im Controlplane-Log:<br/><i>error caught during processor</i><br/>(nie die Ursache)"]
+
+  U --> N --> L --> F
+  F --> S1
+  F --> S2
+  F --> S3
+  S2 --> R
+
+  classDef ursache fill:#f7e8e8,stroke:#a54a4a
+  classDef symptom fill:#f7f3e8,stroke:#a5904a
+  class U ursache
+  class S1,S2,S3,R symptom
 ```
-postgres-dave.yaml: volume "data" -> emptyDir
-        │
-        ▼  Node-Wechsel 23.08.2026 (Cluster unter Speicherdruck, Evictions)
-Postgres-Pod startet auf neuem Node -- Datenbanken "edc" und "ih" leer
-        │
-        ▼  IdentityHub bootet gegen leere DB
-Flyway legt nur das leere Schema an; Super-User wird neu erzeugt.
-Participant Context, Keypair, DID-Ressource, Credentials: weg.
-        │
-        ├──▶ kein DID-Dokument      -> did.json = HTTP 204
-        ├──▶ kein STS-Client        -> /api/sts/token = 401 invalid_client
-        └──▶ keine MembershipCredential -> BDRS = 401
-```
+
 
 Der **Speicherdruck im Cluster war nur der Auslöser**, nicht die Ursache. Ursache ist das
 fehlende PVC: Jeder Pod-Neustart hätte denselben Effekt gehabt — Update, OOM, Eviction,
@@ -294,9 +303,9 @@ muss ihn neu laden.
 
 **Offen:**
 
-- **`charlie-postgres` steht weiterhin auf `emptyDir`.** Commit `e3d19aa` hat Charlie nicht
-  erfasst. Charlie hat zudem keinen `vault-keeper` — der nächste Node-Wechsel trifft ihn wie
-  Dave, nur ohne Sicherheitsnetz.
+- ~~`charlie-postgres` steht weiterhin auf `emptyDir`.~~ **Erledigt durch Abbau:** der
+  Namespace `windx-charlie` existiert nicht mehr. Falls Charlie neu aufgebaut wird, gelten
+  PVC und `vault-keeper` von Anfang an — siehe [QUICKSTART.md](QUICKSTART.md).
 - **Vault im Dev-Modus.** Der Keeper ist ein Pflaster. Dauerhaft: File- oder Raft-Backend auf
   einem PVC mit regulärem Unseal.
 - **Stiller Ausfall.** Bereitschaftsprüfungen melden `Ready`, während die Identität fehlt.

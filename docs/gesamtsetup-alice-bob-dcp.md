@@ -4,8 +4,14 @@ Diese Doku beschreibt das **komplette Setup end-to-end**: die zentrale Stelle, d
 Teilnehmer Alice und Bob, wie Credentials nach dem **DCP-Protokoll** ausgestellt werden und wie
 Alice am Ende eine Datei von Bob abholt — nur über das öffentliche Internet.
 
-> Ergänzende Dokumente: [Betrieb & Neuaufbau (einfache Sprache)](dataspace-betrieb-und-aufbau.md) ·
-> [.NET-Architektur](architektur-dotnet.md) · [Deploy-Sequenz](DEPLOY.md).
+> Ergänzende Dokumente: [Schnellstart (einen Teilnehmer aufsetzen)](QUICKSTART.md) ·
+> [Betrieb & Neuaufbau (einfache Sprache)](dataspace-betrieb-und-aufbau.md) ·
+> [.NET-Architektur](architektur-dotnet.md) · [Deploy-Referenz](DEPLOY.md) ·
+> [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md).
+
+> **Stand:** Live laufen **drei** Teilnehmer — Alice, Bob und **Dave**. Dieses Dokument erklärt
+> die Protokolle anhand von Alice und Bob; Dave verhält sich identisch und ist in
+> [DEPLOY.md](DEPLOY.md) beschrieben (einzige Abweichung: eigenes Dataplane-Image).
 
 ---
 
@@ -37,6 +43,11 @@ Alice am Ende eine Datei von Bob abholt — nur über das öffentliche Internet.
 | Wallet/IH öffentlich | – | `https://alice-windx.cluster.swms-cloud.com` | `https://bob-windx.cluster.swms-cloud.com` |
 | Connector (DSP) öffentlich | – | `https://alice-edc-windx.cluster.swms-cloud.com/api/v1/dsp` | `https://bob-edc-windx.cluster.swms-cloud.com/api/v1/dsp` |
 | Rolle im Beispiel | stellt Ausweise aus, betreibt BDRS | **Consumer** (holt die Datei) | **Provider** (bietet die Datei) |
+
+Dazu kommt **Dave** als dritter Teilnehmer: Namespace `windx-dave`, DID
+`did:web:dave-windx.cluster.swms-cloud.com`, BPN `BPNL00000000WD04`, Hosts analog mit
+`dave-…`. Er ist am Beispielablauf unten nicht beteiligt, nimmt aber gleichberechtigt am
+Datenraum teil.
 
 **Dezentralitäts-Prinzip:** Alice und Bob haben je einen **vollständig eigenen** Stack. Die
 Zentrale hält **kein einziges Teilnehmer-Geheimnis** — sie stellt nur VCs aus und beantwortet
@@ -303,11 +314,11 @@ EDC-Implementierungsdetail der Aufteilung Connector ↔ Wallet.
   Status-Liste als **JWT**, der EDC-Connector lädt dieselbe URL und erwartet **JSON** — die Requests
   sind ununterscheidbar. Damit Vorzeigen *und* Prüfen funktionieren, wird `credentialStatus`
   weggelassen; ohne es prüft keine Seite die Sperrliste (VCs gelten bis Ablauf).
-- **Teilnehmer-Vault im Dev-Modus** (nur RAM): Nach einem Vault-Neustart müssen Teilnehmer neu
-  provisioniert und Credentials neu ausgestellt werden (IH-DB vorher zurücksetzen). Der **zentrale**
-  Dienst ist nicht betroffen (SQLite auf PVC + Issuer-Schlüssel im K8s-Secret).
-- **Connector-Chart-Fix:** `tractusx-connector` 0.12.1 erzeugt doppelte Catalog-Env-Keys; lokal
-  gepatcht (siehe Betriebsdoku).
+- **Teilnehmer-Vault im Dev-Modus** (nur RAM), aber abgesichert: `vault-seeder` legt ein Backup
+  im Cluster ab, `vault-keeper` spielt es nach einem Pod-Neustart automatisch zurück. Der
+  **zentrale** Dienst ist ohnehin nicht betroffen (SQLite auf PVC + Issuer-Schlüssel im K8s-Secret).
+- **Connector-Chart-Fix:** `tractusx-connector` 0.12.1 erzeugt doppelte Catalog-Env-Keys — daher
+  mit `--server-side=false` installieren. Ein lokal gepatchtes Chart ist dafür nicht nötig.
 - **Härtung:** `POST /api/issuance/offer` ist per Operator-API-Key geschützt; alle
   Default-Credentials (Vault-Token, Management-Key, IH-Super-User-Key) sind rotiert.
 
@@ -320,13 +331,22 @@ EDC-Implementierungsdetail der Aufteilung Connector ↔ Wallet.
 curl -s -o /dev/null -w "%{http_code}\n" https://auth-windx.cluster.swms-cloud.com/.well-known/did.json
 curl -s -o /dev/null -w "%{http_code}\n" https://alice-windx.cluster.swms-cloud.com/.well-known/did.json
 curl -s -o /dev/null -w "%{http_code}\n" https://bob-windx.cluster.swms-cloud.com/.well-known/did.json
+curl -s -o /dev/null -w "%{http_code}\n" https://dave-windx.cluster.swms-cloud.com/.well-known/did.json
 
 # Alle Pods laufen?
-kubectl -n windx-auth  get pods
-kubectl -n windx-alice get pods
-kubectl -n windx-bob   get pods
+for ns in windx-auth windx-alice windx-bob windx-dave; do echo "--- $ns"; kubectl -n $ns get pods; done
+
+# Controlplanes fehlerfrei? Jede Zahl muss 0 sein.
+for p in alice bob dave; do
+  printf '%s: ' $p
+  kubectl -n windx-$p logs deploy/$p-edc-controlplane | grep -ciE 'invalid_client|error caught during processor'
+done
 ```
+
+> `did.json` mit **`204`** heißt: dem IdentityHub fehlt der Participant Context — kein
+> Ingress-Problem. Siehe [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md).
 
 Der vollständige Ablauf (Katalog → Negotiation → Transfer → Pull) mit konkreten Aufrufen steht in
 [`DEPLOY.md`](DEPLOY.md), die schrittweise Erstinstallation in
-[`dataspace-betrieb-und-aufbau.md`](dataspace-betrieb-und-aufbau.md).
+[`dataspace-betrieb-und-aufbau.md`](dataspace-betrieb-und-aufbau.md) und der kürzeste Weg zu einem
+neuen Teilnehmer in [`QUICKSTART.md`](QUICKSTART.md).
