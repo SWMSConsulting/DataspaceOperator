@@ -1,0 +1,167 @@
+# =============================================================================
+# vault-seeder  --  einmaliges Erzeugen des Secrets 'vault-backup'
+#
+# WARUM DAS EXISTIERT
+# -------------------
+# vault-keeper.yaml stellt Vault-Secrets nach einem Pod-Neustart wieder her,
+# braucht dafuer aber ein Backup-Secret. Dessen Erzeugung war bisher eine
+# Handanleitung im Kopf von vault-keeper.yaml: Snapshot per kubectl exec auf den
+# Arbeitsplatz ziehen, mit jq/python aufbereiten, zurueckspielen.
+#
+# Das hat zwei Nachteile: der Signing-Key eines Teilnehmers liegt dabei auf einem
+# Notebook, und das Verfahren ist nicht reproduzierbar -- genau deshalb hatten
+# Alice und Bob einen Keeper und Charlie und Dave nicht.
+#
+# Dieser Job erledigt dasselbe vollstaendig im Cluster. Er liest den Vault ueber
+# die HTTP-API, baut data.json und legt 'vault-backup' ueber die Kubernetes-API an.
+# Der Vault-Token wird aus der Deployment-Spec des Teilnehmer-Vaults gelesen, nicht
+# im Klartext uebergeben.
+#
+# ANWENDUNG (Platzhalter ersetzen):
+#   sed -e 's/__NS__/windx-dave/' -e 's/__PARTICIPANT__/dave/' vault-seeder.yaml \
+#     | kubectl apply -f -
+#   kubectl -n windx-dave wait --for=condition=complete job/vault-seeder --timeout=120s
+#   kubectl -n windx-dave logs job/vault-seeder
+#
+# Danach den Keeper deployen:
+#   sed -e 's/__NS__/windx-dave/' -e 's/__PARTICIPANT__/dave/' vault-keeper.yaml \
+#     | kubectl apply -f -
+#
+# WICHTIG: nur laufen lassen, wenn der Vault GESUND ist. Der Job schreibt das
+# Backup aus dem aktuellen Vault-Inhalt -- gegen einen bereits leeren Vault
+# erzeugt er ein leeres Backup. Er bricht deshalb bei 0 Secrets ab.
+# Erneutes Ausfuehren ueberschreibt ein bestehendes Backup (Job vorher loeschen).
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-seeder
+  namespace: __NS__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-seeder
+  namespace: __NS__
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-seeder
+  namespace: __NS__
+subjects:
+  - kind: ServiceAccount
+    name: vault-seeder
+    namespace: __NS__
+roleRef:
+  kind: Role
+  name: vault-seeder
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-seeder-script
+  namespace: __NS__
+data:
+  seeder.py: |
+    import urllib.request, urllib.error, json, os, base64, ssl
+
+    NS   = os.environ['NAMESPACE']
+    PART = os.environ['PARTICIPANT']
+    VADDR = 'http://%s-vault:8200' % PART
+
+    K8S = 'https://kubernetes.default.svc'
+    SA  = '/var/run/secrets/kubernetes.io/serviceaccount'
+    ktoken = open(SA + '/token').read()
+    kctx = ssl.create_default_context(cafile=SA + '/ca.crt')
+
+    def k8s(method, path, body=None, ctype='application/json'):
+        data = json.dumps(body).encode() if body is not None else None
+        r = urllib.request.Request(K8S + path, method=method, data=data,
+            headers={'Authorization': 'Bearer ' + ktoken, 'Content-Type': ctype})
+        return json.loads(urllib.request.urlopen(r, timeout=15, context=kctx).read())
+
+    # 1. Vault-Token aus der Deployment-Spec des Teilnehmer-Vaults lesen.
+    dep = k8s('GET', '/apis/apps/v1/namespaces/%s/deployments/%s-vault' % (NS, PART))
+    vtoken = None
+    for c in dep['spec']['template']['spec']['containers']:
+        for e in c.get('env', []):
+            if e.get('name') == 'VAULT_DEV_ROOT_TOKEN_ID':
+                vtoken = e.get('value')
+    if not vtoken:
+        raise SystemExit('FEHLER: VAULT_DEV_ROOT_TOKEN_ID nicht in %s-vault gefunden' % PART)
+
+    def vault(method, path):
+        r = urllib.request.Request(VADDR + path, method=method,
+            headers={'X-Vault-Token': vtoken})
+        return json.loads(urllib.request.urlopen(r, timeout=15).read())
+
+    # 2. Vault-Inhalt einsammeln. Schluesselnamen enthalten prozentkodierte
+    #    Zeichen (did%3Aweb%3A...), im URL-Pfad muss '%' zu '%25' werden.
+    keys = vault('LIST', '/v1/secret/metadata')['data']['keys']
+    backup = {}
+    for k in keys:
+        d = vault('GET', '/v1/secret/data/' + k.replace('%', '%25'))
+        backup[k] = d['data']['data']
+    print('Vault-Secrets gelesen: %d' % len(backup), flush=True)
+    for k in sorted(backup):
+        print('  - %s' % k, flush=True)
+
+    if not backup:
+        raise SystemExit('FEHLER: Vault ist leer -- kein Backup geschrieben.')
+
+    # 3. Secret 'vault-backup' schreiben (data.json + vault-token).
+    body = {
+        'apiVersion': 'v1', 'kind': 'Secret',
+        'metadata': {'name': 'vault-backup', 'namespace': NS},
+        'type': 'Opaque',
+        'data': {
+            'data.json':   base64.b64encode(json.dumps(backup).encode()).decode(),
+            'vault-token': base64.b64encode(vtoken.encode()).decode(),
+        },
+    }
+    try:
+        k8s('POST', '/api/v1/namespaces/%s/secrets' % NS, body)
+        print('Secret vault-backup angelegt.', flush=True)
+    except urllib.error.HTTPError as e:
+        if e.code != 409:
+            raise
+        k8s('PUT', '/api/v1/namespaces/%s/secrets/vault-backup' % NS, body)
+        print('Secret vault-backup aktualisiert.', flush=True)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-seeder
+  namespace: __NS__
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      serviceAccountName: vault-seeder
+      restartPolicy: Never
+      containers:
+        - name: seeder
+          image: python:3-alpine
+          command: ["python", "/script/seeder.py"]
+          env:
+            - name: NAMESPACE
+              value: "__NS__"
+            - name: PARTICIPANT
+              value: "__PARTICIPANT__"
+          volumeMounts:
+            - { name: script, mountPath: /script }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { memory: 64Mi }
+      volumes:
+        - name: script
+          configMap: { name: vault-seeder-script }

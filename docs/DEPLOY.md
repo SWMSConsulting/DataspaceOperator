@@ -129,6 +129,12 @@ curl -s https://alice-windx.cluster.swms-cloud.com/.well-known/did.json | jq .
 ```
 
 ### 5. Provision the participant context + STS account (super-user Identity API)
+
+> **Restoring an existing participant? Do NOT use this step.** It generates a *new* signing key
+> and would overwrite the old private key still sitting in the vault. Use
+> `deploy/participants/ih-provision.yaml`, which reuses the existing key so the DID stays valid —
+> see [vorfall-2026-08-23-identitaetsverlust.md](vorfall-2026-08-23-identitaetsverlust.md).
+
 This is the MXD `SeedIH → Create Participant` call, adapted to our DIDs/hosts. It:
 creates the participant context, **generates the DID signing key** (EdDSA/Ed25519) into the
 shared vault at `<did>#signing-key-1`, **creates the STS account** and stores its client

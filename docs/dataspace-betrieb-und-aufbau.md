@@ -282,6 +282,9 @@ Die konkreten Aufrufe stehen in `DEPLOY.md`.
 |---|---|
 | Credential kommt nicht an | IH-Log des Empfängers: `state ISSUED` oder `state ERROR` mit Grund |
 | `401` beim BDRS | Zentrale-Log: `BDRS read rejected: …` nennt den genauen Grund |
+| `did.json` liefert `204` | Kein Ingress-Problem — der IdentityHub hat keinen Participant Context mehr. Siehe [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md) |
+| `HTTP client exception … /api/sts/token` | Ist ein `401 invalid_client`: STS-Account fehlt. Gleiche Ursache wie oben |
+| Controlplane-Log voll mit `error caught during processor` | Reine Folgewirkung — nie die Ursache. Prüfkette in [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md) Abschnitt 4 abarbeiten |
 | `Empty optional` | BPN stimmt nicht überein (Zentrale ⇄ Connector ⇄ Aufruf) |
 | Connector-Fehler ohne Details | Log4j2-Template des Connectors zeigt standardmäßig **keine** Stacktraces — im ConfigMap `…-log4j2` einen `exception`-Resolver ergänzen |
 | Katalog `500` bei der Gegenseite | Meist die Credential-Prüfung; Stacktrace im Controlplane-Log der Gegenseite |

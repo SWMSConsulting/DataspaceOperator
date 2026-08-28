@@ -1,0 +1,201 @@
+# =============================================================================
+# ih-provision  --  Participant Context eines Teilnehmers (wieder-)herstellen
+#
+# WARUM DAS EXISTIERT
+# -------------------
+# Schritt 5 in docs/DEPLOY.md legt den Participant Context per Hand an: Port-Forward
+# auf die Identity API, curl mit dem Super-User-Key. Das ist einmalig beim Aufbau
+# in Ordnung, taugt aber nicht zur Wiederherstellung -- und genau die wurde noetig,
+# nachdem der Node-Wechsel am 23.08.2026 Daves IdentityHub-Datenbank geloescht hat
+# (siehe Commit e3d19aa, emptyDir statt PVC).
+#
+# UNTERSCHIED ZU DEPLOY.md SCHRITT 5
+# ----------------------------------
+# DEPLOY.md nutzt 'keyGeneratorParams' und laesst den IdentityHub einen NEUEN
+# Signing-Key erzeugen. Fuer eine Wiederherstellung ist das falsch: der alte private
+# Key liegt noch im Vault, und ein neuer wuerde ihn ueberschreiben. Ein zuvor per
+# vault-seeder.yaml gezogenes Backup zeigte dann auf den alten Key, waehrend DID-Doc
+# und Datenbank den neuen tragen -- der vault-keeper wuerde im Ernstfall eine kaputte
+# Identitaet wiederherstellen.
+#
+# Dieser Job liest den vorhandenen Schluessel aus dem Vault und uebergibt nur dessen
+# OEFFENTLICHEN Teil als 'publicKeyJwk'. Der private Teil bleibt, wo er ist, und der
+# DID bleibt unveraendert -- keine erneute Abstimmung mit dem Operator noetig.
+#
+# ANWENDUNG (Platzhalter ersetzen):
+#   sed -e 's/__NS__/windx-dave/' -e 's/__PARTICIPANT__/dave/' \
+#       -e 's/__DID_HOST__/dave-windx.cluster.swms-cloud.com/' \
+#       -e 's/__EDC_HOST__/dave-edc-windx.cluster.swms-cloud.com/' \
+#       ih-provision.yaml | kubectl apply -f -
+#   kubectl -n windx-dave wait --for=condition=complete job/ih-provision --timeout=180s
+#   kubectl -n windx-dave logs job/ih-provision
+#
+# VORAUSSETZUNG: der Signing-Key muss im Vault liegen. Ist auch der weg, ist die
+# Identitaet nicht wiederherstellbar -- dann DEPLOY.md Schritt 5 mit
+# keyGeneratorParams fahren und den neuen DID beim Operator neu onboarden.
+#
+# NACHLAUF: danach vault-seeder.yaml erneut ausfuehren, damit das Backup den
+# Endzustand abbildet (der IdentityHub legt beim Anlegen ein neues STS-Client-Secret ab).
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ih-provision
+  namespace: __NS__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ih-provision
+  namespace: __NS__
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ih-provision
+  namespace: __NS__
+subjects:
+  - kind: ServiceAccount
+    name: ih-provision
+    namespace: __NS__
+roleRef:
+  kind: Role
+  name: ih-provision
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ih-provision-script
+  namespace: __NS__
+data:
+  provision.py: |
+    import urllib.request, urllib.error, json, os, base64, ssl
+
+    NS       = os.environ['NAMESPACE']
+    PART     = os.environ['PARTICIPANT']
+    DID_HOST = os.environ['DID_HOST']
+    EDC_HOST = os.environ['EDC_HOST']
+
+    DID   = 'did:web:' + DID_HOST
+    KEYID = DID + '#signing-key-1'
+    VADDR = 'http://%s-vault:8200' % PART
+    IHURL = 'http://%s-ih:8082/api/identity/v1alpha/participants' % PART
+
+    K8S = 'https://kubernetes.default.svc'
+    SA  = '/var/run/secrets/kubernetes.io/serviceaccount'
+    ktoken = open(SA + '/token').read()
+    kctx = ssl.create_default_context(cafile=SA + '/ca.crt')
+
+    def http(method, url, body=None, headers=None, ctx=None):
+        data = json.dumps(body).encode() if body is not None else None
+        h = {'Content-Type': 'application/json'}
+        h.update(headers or {})
+        r = urllib.request.Request(url, method=method, data=data, headers=h)
+        return urllib.request.urlopen(r, timeout=20, context=ctx).read()
+
+    # 1. Vault-Token aus der Deployment-Spec lesen (nicht im Klartext uebergeben).
+    dep = json.loads(http('GET', '%s/apis/apps/v1/namespaces/%s/deployments/%s-vault'
+                          % (K8S, NS, PART),
+                          headers={'Authorization': 'Bearer ' + ktoken}, ctx=kctx))
+    vtoken = None
+    for c in dep['spec']['template']['spec']['containers']:
+        for e in c.get('env', []):
+            if e.get('name') == 'VAULT_DEV_ROOT_TOKEN_ID':
+                vtoken = e.get('value')
+    if not vtoken:
+        raise SystemExit('FEHLER: VAULT_DEV_ROOT_TOKEN_ID nicht gefunden')
+
+    def vault_get(alias):
+        # Aliasse liegen prozentkodiert im KV-Store; im URL-Pfad wird '%' zu '%25'.
+        path = alias.replace(':', '%3A').replace('#', '%23').replace('%', '%25')
+        raw = http('GET', VADDR + '/v1/secret/data/' + path,
+                   headers={'X-Vault-Token': vtoken})
+        return json.loads(raw)['data']['data']['content']
+
+    # 2. Super-User-Key und vorhandenen Signing-Key aus dem Vault holen.
+    apikey = vault_get('super-user-apikey')
+    try:
+        jwk = json.loads(vault_get(KEYID))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise SystemExit('FEHLER: Signing-Key %s liegt nicht im Vault. '
+                             'Identitaet ist nicht wiederherstellbar -- siehe Kopf '
+                             'dieser Datei.' % KEYID)
+        raise
+
+    # 3. Nur den oeffentlichen Teil weitergeben ('d' ist der private Skalar).
+    public_jwk = {k: v for k, v in jwk.items() if k != 'd'}
+    print('Signing-Key aus Vault gelesen: kty=%s crv=%s kid=%s'
+          % (public_jwk.get('kty'), public_jwk.get('crv'), public_jwk.get('kid')), flush=True)
+
+    b64did = base64.b64encode(DID.encode()).decode()
+    manifest = {
+        'active': True,
+        'did': DID,
+        'participantContextId': DID,
+        'key': {
+            'keyId': KEYID,
+            'privateKeyAlias': KEYID,
+            'publicKeyJwk': public_jwk,
+        },
+        'serviceEndpoints': [
+            {'type': 'CredentialService', 'id': 'credentialservice-1',
+             'serviceEndpoint': 'https://%s/api/credentials/v1/participants/%s'
+                                % (DID_HOST, b64did)},
+            {'type': 'ProtocolEndpoint', 'id': 'dsp-url',
+             'serviceEndpoint': 'https://%s/api/v1/dsp' % EDC_HOST},
+        ],
+    }
+
+    # 4. Participant Context anlegen.
+    try:
+        resp = http('POST', IHURL, manifest, headers={'X-Api-Key': apikey})
+        print('Participant Context angelegt:', resp.decode()[:400], flush=True)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:600]
+        if e.code == 409:
+            print('Participant Context existiert bereits (409) -- weiter.', flush=True)
+        else:
+            raise SystemExit('FEHLER %d beim Anlegen: %s' % (e.code, body))
+
+    # 5. DID veroeffentlichen (idempotent; bei 'active: true' meist schon geschehen).
+    try:
+        http('POST', '%s/%s/did/publish' % (IHURL, b64did), {},
+             headers={'X-Api-Key': apikey})
+        print('DID veroeffentlicht.', flush=True)
+    except urllib.error.HTTPError as e:
+        print('DID-Publish: HTTP %d %s' % (e.code, e.read().decode()[:300]), flush=True)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ih-provision
+  namespace: __NS__
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      serviceAccountName: ih-provision
+      restartPolicy: Never
+      containers:
+        - name: provision
+          image: python:3-alpine
+          command: ["python", "/script/provision.py"]
+          env:
+            - { name: NAMESPACE,   value: "__NS__" }
+            - { name: PARTICIPANT, value: "__PARTICIPANT__" }
+            - { name: DID_HOST,    value: "__DID_HOST__" }
+            - { name: EDC_HOST,    value: "__EDC_HOST__" }
+          volumeMounts:
+            - { name: script, mountPath: /script }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits:   { memory: 64Mi }
+      volumes:
+        - name: script
+          configMap: { name: ih-provision-script }
