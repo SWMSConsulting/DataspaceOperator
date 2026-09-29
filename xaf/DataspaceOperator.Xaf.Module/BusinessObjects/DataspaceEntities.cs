@@ -80,7 +80,7 @@ public class TrustedIssuerEntity : BaseObject
     public virtual string? Did { get; set; }
     public virtual bool IsOwnIssuer { get; set; }
 
-    /// <summary>Credential types this issuer is trusted for (multi-select); empty = all types ("*").</summary>
+    /// <summary>Credential types this issuer is trusted for (multi-select); empty = trusted for none.</summary>
     public virtual IList<CredentialTypeEntity> SupportedTypes { get; set; }
 }
 

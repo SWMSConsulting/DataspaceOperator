@@ -28,6 +28,11 @@ issuer:
   existingSecret: ""            # secret name
   existingSecretSeedKey: "issuer-seed"
 
+  # Reject presentations whose signing key is not declared under the DID verification relationship
+  # DCP requires. Leave false until the participants' IdentityHubs publish non-empty
+  # `authentication` arrays -- otherwise every participant is locked out at once.
+  enforceVerificationRelationships: false
+
 ## XAF security URL signing key (sensitive). Change for production.
 security:
   urlSigningKey: "CHANGE-ME-URL-SIGNING-KEY"

@@ -46,6 +46,13 @@ public static class ProtocolIntegration
         services.AddHttpClient<ICredentialDeliveryService, HttpCredentialDeliveryService>();
         services.AddHttpClient<ICredentialOfferService, HttpCredentialOfferService>();
 
+        // Issuer:EnforceVerificationRelationships=true makes the verifier insist on the DID
+        // verification relationship DCP requires (authentication / assertionMethod). Off by default:
+        // IdentityHub-published participant documents currently declare NONE, so switching it on
+        // before those are fixed rejects every participant. While off, each gap is logged.
+        var enforceRelationships = string.Equals(
+            config["Issuer:EnforceVerificationRelationships"], "true", StringComparison.OrdinalIgnoreCase);
+        services.AddSingleton(new VpVerifierOptions { EnforceVerificationRelationships = enforceRelationships });
         services.AddScoped<VpVerifier>();
         services.AddScoped<BdrsDirectoryService>();
         // Issuer:IncludeCredentialStatus=false omits credentialStatus from issued credentials, which
@@ -164,8 +171,9 @@ public sealed class XafTrustedIssuerStore(INonSecuredObjectSpaceFactory factory)
         using var os = factory.CreateNonSecuredObjectSpace(typeof(TrustedIssuerEntity));
         var e = os.GetObjectsQuery<TrustedIssuerEntity>().FirstOrDefault(x => x.Did == issuerDid);
         if (e is null) return Task.FromResult(false);
-        // empty SupportedTypes = trusted for all types ("*")
-        var trusted = e.SupportedTypes.Count == 0 || e.SupportedTypes.Any(t => t.Name == credentialType);
+        // An issuer is trusted only for the types explicitly listed. An empty list used to mean
+        // "trusted for everything", so forgetting to fill it in silently created a master key.
+        var trusted = e.SupportedTypes.Any(t => t.Name == credentialType);
         return Task.FromResult(trusted);
     }
 

@@ -12,4 +12,5 @@ data:
   # IdentityHub-expects-JWT vs EDC-expects-JSON conflict on the status-list URL.
   # NOTE: `default` treats boolean false as empty, so test for nil explicitly.
   Issuer__IncludeCredentialStatus: {{ if kindIs "invalid" .Values.issuer.includeCredentialStatus }}"true"{{ else }}{{ .Values.issuer.includeCredentialStatus | quote }}{{ end }}
+  Issuer__EnforceVerificationRelationships: {{ if kindIs "invalid" .Values.issuer.enforceVerificationRelationships }}"false"{{ else }}{{ .Values.issuer.enforceVerificationRelationships | quote }}{{ end }}
   ConnectionStrings__ConnectionString: {{ include "dataspace-operator.connectionString" . | quote }}

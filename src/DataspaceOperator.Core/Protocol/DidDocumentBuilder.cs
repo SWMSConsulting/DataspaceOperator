@@ -28,6 +28,9 @@ public sealed class DidDocumentBuilder(IIssuerSigner signer)
             ],
             Authentication = [signer.KeyId],
             AssertionMethod = [signer.KeyId],
+            // Required by DCP for Self-Issued ID Tokens; without it a strict verifier rejects
+            // every SI token we mint (we send them on every CredentialMessage delivery).
+            CapabilityInvocation = [signer.KeyId],
         };
         if (credentialServiceUrl is not null)
         {

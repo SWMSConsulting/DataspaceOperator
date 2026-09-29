@@ -30,14 +30,22 @@ public class Updater : ModuleUpdater {
         SeedType("MembershipCredential");
         SeedType("DataExchangeGovernanceCredential");
         SeedType("BpnCredential");
+        ObjectSpace.CommitChanges();
 
         var own = ObjectSpace.FirstOrDefault<TrustedIssuerEntity>(x => x.Did == ownIssuerDid);
         if(own == null) {
             own = ObjectSpace.CreateObject<TrustedIssuerEntity>();
             own.Did = ownIssuerDid;
-            own.IsOwnIssuer = true;   // empty SupportedTypes = trusted for all types
-            ObjectSpace.CommitChanges();
+            own.IsOwnIssuer = true;
         }
+        // An issuer is trusted only for the types it lists (an empty list no longer means "all").
+        // Older databases seeded our own issuer with an empty list; fill it, or the operator would
+        // reject its own credentials and every BDRS read would fail.
+        if(own.SupportedTypes.Count == 0) {
+            foreach(var type in ObjectSpace.GetObjectsQuery<CredentialTypeEntity>().ToList())
+                own.SupportedTypes.Add(type);
+        }
+        ObjectSpace.CommitChanges();
 
         void SeedType(string name) {
             if(ObjectSpace.FirstOrDefault<CredentialTypeEntity>(x => x.Name == name) == null) {

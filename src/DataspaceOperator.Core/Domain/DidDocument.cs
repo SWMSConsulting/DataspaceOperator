@@ -21,6 +21,14 @@ public sealed class DidDocument
     [JsonPropertyName("assertionMethod")]
     public List<string> AssertionMethod { get; set; } = [];
 
+    /// <summary>
+    /// DCP requires the key that signs a Self-Issued ID Token to carry the
+    /// <c>capabilityInvocation</c> relationship ("Validating Self-Issued ID Tokens", step 3).
+    /// Omitting it makes our tokens fail against a strict verifier.
+    /// </summary>
+    [JsonPropertyName("capabilityInvocation")]
+    public List<string> CapabilityInvocation { get; set; } = [];
+
     [JsonPropertyName("service")]
     public List<DidService> Service { get; set; } = [];
 }

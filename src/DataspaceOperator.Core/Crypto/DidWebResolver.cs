@@ -44,27 +44,86 @@ public sealed class DidWebResolver(HttpClient http, bool useHttps = true) : IDid
         return $"{scheme}://{host}/{path}/did.json";
     }
 
-    /// <summary>Find the Ed25519 public key for a given verification-method id (kid), or the first key.</summary>
+    /// <summary>Find the Ed25519 public key for a given verification-method id (kid).</summary>
     public static Ed25519Key? GetKey(DidDocument doc, string? kid)
     {
-        VerificationMethod? vm =
-            (kid is not null ? doc.VerificationMethod.FirstOrDefault(v => v.Id == kid) : null)
-            ?? doc.VerificationMethod.FirstOrDefault();
+        var vm = ResolveMethod(doc, kid, VerificationRelationship.Any, enforceRelationship: false, out _);
         if (vm?.PublicKeyJwk is null) return null;
         return Ed25519Key.FromPublicJwk(vm.PublicKeyJwk);
     }
 
     /// <summary>
-    /// The raw public JWK for a verification-method id (kid), or the first method. Unlike
-    /// <see cref="GetKey"/> this keeps the original key type (OKP/EC), so callers can verify
-    /// ES256 (P-256) signatures as well as EdDSA — participant wallets sign with P-256.
+    /// The raw public JWK for a verification-method id (kid). Unlike <see cref="GetKey"/> this keeps
+    /// the original key type (OKP/EC), so callers can verify ES256 (P-256) signatures as well as
+    /// EdDSA — participant wallets sign with P-256.
     /// </summary>
-    public static System.Text.Json.Nodes.JsonObject? GetVerificationJwk(DidDocument doc, string? kid)
+    /// <param name="relationship">
+    /// The verification relationship DCP demands for this purpose. <see cref="VerificationRelationship.Any"/>
+    /// skips the check entirely.
+    /// </param>
+    /// <param name="enforceRelationship">
+    /// When false (the default) a missing relationship only produces <paramref name="warning"/> instead of
+    /// rejecting. Existing IdentityHub-published DID documents carry an EMPTY <c>authentication</c> array,
+    /// so enforcing immediately would lock out every current participant. Flip this on once the
+    /// published documents declare their relationships.
+    /// </param>
+    public static System.Text.Json.Nodes.JsonObject? GetVerificationJwk(
+        DidDocument doc, string? kid,
+        VerificationRelationship relationship = VerificationRelationship.Any,
+        bool enforceRelationship = false)
+        => GetVerificationJwk(doc, kid, relationship, enforceRelationship, out _);
+
+    /// <inheritdoc cref="GetVerificationJwk(DidDocument,string?,VerificationRelationship,bool)"/>
+    public static System.Text.Json.Nodes.JsonObject? GetVerificationJwk(
+        DidDocument doc, string? kid, VerificationRelationship relationship, bool enforceRelationship,
+        out string? warning)
+        => ResolveMethod(doc, kid, relationship, enforceRelationship, out warning)?.PublicKeyJwk;
+
+    /// <summary>
+    /// Resolve the verification method to verify a signature with.
+    ///
+    /// DCP ("Validating Self-Issued ID Tokens", step 3) is explicit and we follow it: a <c>kid</c> that
+    /// matches nothing is a rejection, and so is an absent <c>kid</c> when the document holds more than
+    /// one method. The previous implementation fell back to <c>VerificationMethod.FirstOrDefault()</c>
+    /// in both cases, which silently verified against whichever key happened to be listed first.
+    /// </summary>
+    private static VerificationMethod? ResolveMethod(
+        DidDocument doc, string? kid, VerificationRelationship relationship, bool enforceRelationship,
+        out string? warning)
     {
-        VerificationMethod? vm =
-            (kid is not null ? doc.VerificationMethod.FirstOrDefault(v => v.Id == kid) : null)
-            ?? doc.VerificationMethod.FirstOrDefault();
-        return vm?.PublicKeyJwk;
+        warning = null;
+
+        VerificationMethod? vm;
+        if (kid is not null)
+        {
+            // A kid that names no method is an error, NOT a reason to guess another key.
+            vm = doc.VerificationMethod.FirstOrDefault(v => v.Id == kid);
+            if (vm is null) return null;
+        }
+        else
+        {
+            // No kid: unambiguous only when the document holds exactly one method.
+            if (doc.VerificationMethod.Count != 1) return null;
+            vm = doc.VerificationMethod[0];
+        }
+
+        if (relationship == VerificationRelationship.Any) return vm;
+
+        var declared = relationship switch
+        {
+            VerificationRelationship.Authentication => doc.Authentication,
+            VerificationRelationship.AssertionMethod => doc.AssertionMethod,
+            VerificationRelationship.CapabilityInvocation => doc.CapabilityInvocation,
+            _ => null,
+        };
+
+        if (declared is not null && declared.Contains(vm.Id, StringComparer.Ordinal)) return vm;
+
+        warning = declared is null || declared.Count == 0
+            ? $"DID document '{doc.Id}' declares no '{relationship}' relationship at all; DCP requires it."
+            : $"Key '{vm.Id}' is not listed under '{relationship}' in DID document '{doc.Id}'.";
+
+        return enforceRelationship ? null : vm;
     }
 
     public static string? GetCredentialServiceEndpoint(DidDocument doc) =>

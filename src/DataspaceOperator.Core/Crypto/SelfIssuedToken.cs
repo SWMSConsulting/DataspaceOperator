@@ -69,7 +69,12 @@ public static class SelfIssuedToken
 
         var doc = await didResolver.ResolveAsync(iss, ct);
         if (doc is null) return null;
-        var jwk = DidWebResolver.GetVerificationJwk(doc, jws.Kid);
+        // DCP "Validating Self-Issued ID Tokens" step 3 requires the signing key to carry
+        // `capabilityInvocation`. Not enforced yet (participant DID documents do not declare it);
+        // the resolver reports the gap via the out-parameter so it can be logged.
+        var jwk = DidWebResolver.GetVerificationJwk(
+            doc, jws.Kid, VerificationRelationship.CapabilityInvocation,
+            enforceRelationship: false, out _);
         if (jwk is null || !JwkVerifier.Verify(jwk, jws.Algorithm, jws.SigningInput, jws.Signature))
             return null;
 

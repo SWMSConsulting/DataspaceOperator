@@ -66,6 +66,10 @@ public static class ProtocolEndpoints
                 return Results.Json(new { error = verification.Error }, statusCode: StatusCodes.Status401Unauthorized);
             }
             ctx.Items[AuditMiddleware.DidKey] = verification.HolderDid;
+
+            foreach (var w in verification.Warnings)
+                log.LogWarning("BDRS read: spec deviation tolerated - {Warning}", w);
+
             var map = await bdrs.GetDirectoryAsync(ct);
             log.LogInformation("BDRS read authorized for holder {Holder}; directory: {Map}",
                 verification.HolderDid, string.Join("; ", map.Select(kv => $"{kv.Key}={kv.Value}")));
