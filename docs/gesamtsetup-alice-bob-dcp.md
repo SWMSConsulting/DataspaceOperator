@@ -132,7 +132,7 @@ dem Request — wegen Reverse-Proxy).
 
 ### 4.3 Ablauf: Alice bekommt ihr MembershipCredential
 
-Ausgelöst im Admin-UI mit **„Issue Membership Credential"** (oder über den geschützten
+Ausgelöst im Admin-UI mit **„Issue Credential"** (oder über den geschützten
 `POST /api/issuance/offer`).
 
 ```mermaid

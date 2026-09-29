@@ -69,9 +69,9 @@ XAF-Blazor-Infrastruktur (SignalR-Circuit-Handling), aus der XAF-Vorlage.
 - Deployment über das Helm-Chart in [`helm/dataspace-operator`](../../helm/dataspace-operator);
   Betrieb + Neuaufbau in [`docs/dataspace-betrieb-und-aufbau.md`](../../docs/dataspace-betrieb-und-aufbau.md).
 
-## Ablaufbeispiel „Issue Membership Credential"
+## Ablaufbeispiel „Issue Credential"
 
-UI-Aktion → `IssueMembershipController` → `ICredentialOfferService` (Offer an Wallet) → IdentityHub
+UI-Aktion → `IssueCredentialController` → `ICredentialOfferService` (Offer an Wallet) → IdentityHub
 startet DCP-Request → `POST /api/issuance/credentials` (dieser Prozess) → `DcpIssuanceService`
 stellt aus und liefert die `CredentialMessage` → Wallet speichert. Jeder dieser Aufrufe landet im
 **Audit-Trail** am Teilnehmer.

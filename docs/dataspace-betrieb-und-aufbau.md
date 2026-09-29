@@ -152,7 +152,7 @@ Jeder Namespace enthält **fünf** Bausteine, die zusammengehören:
 
 ### 4.1 Ablauf A: Teilnehmer bekommt seinen Mitgliedsausweis (DCP)
 
-Ausgelöst im Admin-UI mit **„Issue Membership Credential"**.
+Ausgelöst im Admin-UI mit **„Issue Credential"** (ein Typ oder „All" für alle drei).
 
 1. **Angebot.** Die Zentrale schickt an Alices Wallet: „Ich hätte hier ein MembershipCredential
    für dich." (`CredentialOfferMessage`)
@@ -348,7 +348,7 @@ Im Admin-UI (`https://auth-windx.cluster.swms-cloud.com`) je einen Participant a
 
 ### Schritt 8 — Credentials ausstellen
 
-Im Admin-UI beim Teilnehmer **alle drei Credentials** ausstellen — `MembershipCredential`,
+Im Admin-UI beim Teilnehmer **„Issue Credential" → „All"** wählen; das stellt alle drei Credentials nacheinander aus — `MembershipCredential`,
 `BpnCredential` und `DataExchangeGovernanceCredential`. Nur die Mitgliedschaft auszustellen
 genügt nicht: Der Teilnehmer gilt dann als onboardet, scheitert aber bei jedem Katalogabruf
 mit `401`. Kontrolle im IH-Log:

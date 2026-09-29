@@ -214,7 +214,8 @@ Im Admin-UI `https://auth-windx.cluster.swms-cloud.com`:
 
 1. **Participant anlegen** — `Bpn` = `$BPN`, `Did` = `$DID`,
    `CredentialServiceUrl` = `https://$IH_HOST/api/credentials/v1/participants/$DID_B64`
-2. Beim Teilnehmer **alle drei Credentials** ausstellen: `MembershipCredential`,
+2. Beim Teilnehmer **„Issue Credential" → „All"** wählen. Das stellt alle drei Credentials
+   nacheinander aus: `MembershipCredential`,
    `BpnCredential` und `DataExchangeGovernanceCredential`.
 
 > **Nur die Mitgliedschaft reicht nicht.** DSP 2025-1 fordert alle drei gemeinsam an. Mit

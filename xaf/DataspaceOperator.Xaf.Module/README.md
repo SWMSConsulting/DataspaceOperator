@@ -33,12 +33,17 @@ Alle Properties `virtual` (EF-Core-Change-Tracking-Proxies). Schlüssel aus `Bas
 
 Benutzer-Objekte des XAF-Security-Systems (PermissionPolicy).
 
-### `Controllers/IssueMembershipController.cs`
+### `Controllers/IssueCredentialController.cs`
 
-`ViewController` mit der `SimpleAction` **„Issue Membership Credential"** auf `ParticipantEntity`.
-Schickt über `ICredentialOfferService.SendOfferAsync` ein Credential-Offer an die Wallet des
-Teilnehmers (der IdentityHub startet daraufhin den DCP-Request). Läuft in einem `Task.Run` mit
-eigenem DI-Scope, um einen Sync-over-Async-Deadlock auf dem Blazor-Circuit zu vermeiden.
+`ViewController` mit der `SingleChoiceAction` **„Issue Credential"** auf `ParticipantEntity`:
+einer der drei Typen einzeln oder **„All"** (`MembershipCredential`, `BpnCredential`,
+`DataExchangeGovernanceCredential` — DSP 2025-1 verlangt alle drei). Schickt über
+`ICredentialOfferService.SendOfferAsync` ein Credential-Offer an die Wallet des Teilnehmers (der
+IdentityHub startet daraufhin den DCP-Request). Bei „All" gehen die Angebote **nacheinander** raus:
+Der IdentityHub nennt im Request keinen Typ, der Issuer ordnet ihn dem zuletzt an diesen Holder
+geschickten Angebot zu. Die Aktion wartet deshalb per `IssuanceRequestTracker.WaitForSettledAsync`,
+bis ein Typ zugestellt ist, bevor sie den nächsten anbietet. Läuft in einem `Task.Run` mit eigenem
+DI-Scope, um einen Sync-over-Async-Deadlock auf dem Blazor-Circuit zu vermeiden.
 
 ### `DatabaseUpdate/Updater.cs`
 

@@ -19,6 +19,7 @@ public sealed class IssuanceRequestTracker
         public string HolderPid { get; } = holderPid;
         public string HolderDid { get; } = holderDid;
         public string CredentialType { get; } = credentialType;
+        public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
         public RequestState State { get; set; } = RequestState.Received;
         public string? Error { get; set; }
     }
@@ -54,4 +55,27 @@ public sealed class IssuanceRequestTracker
     }
 
     public Pending? Get(string issuerPid) => _byIssuerPid.TryGetValue(issuerPid, out var p) ? p : null;
+
+    /// <summary>
+    /// Wait until the holder has requested a credential of this type (after <paramref name="since"/>)
+    /// and its issuance has settled - delivered or rejected. Returns null on timeout.
+    ///
+    /// Needed to offer several types to one holder: correlation runs on the last offer per holder
+    /// (see <see cref="RememberOffer"/>), so a second offer sent before the first request arrived
+    /// would overwrite it and both requests would get the second type.
+    /// </summary>
+    public async Task<Pending?> WaitForSettledAsync(
+        string holderDid, string credentialType, DateTimeOffset since, TimeSpan timeout, CancellationToken ct = default)
+    {
+        var deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var settled = _byIssuerPid.Values.FirstOrDefault(p =>
+                p.HolderDid == holderDid && p.CredentialType == credentialType &&
+                p.CreatedAt >= since && p.State != RequestState.Received);
+            if (settled is not null) return settled;
+            await Task.Delay(250, ct);
+        }
+        return null;
+    }
 }
