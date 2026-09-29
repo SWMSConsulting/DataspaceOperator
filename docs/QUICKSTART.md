@@ -214,7 +214,12 @@ Im Admin-UI `https://auth-windx.cluster.swms-cloud.com`:
 
 1. **Participant anlegen** — `Bpn` = `$BPN`, `Did` = `$DID`,
    `CredentialServiceUrl` = `https://$IH_HOST/api/credentials/v1/participants/$DID_B64`
-2. Beim Teilnehmer **„Issue Membership Credential"** auslösen.
+2. Beim Teilnehmer **alle drei Credentials** ausstellen: `MembershipCredential`,
+   `BpnCredential` und `DataExchangeGovernanceCredential`.
+
+> **Nur die Mitgliedschaft reicht nicht.** DSP 2025-1 fordert alle drei gemeinsam an. Mit
+> einem unvollständigen Satz laufen Onboarding und DID-Auflösung sauber durch, aber jeder
+> Katalogabruf endet mit `401` — ein Fehlerbild, das wie ein Netz- oder Rechteproblem aussieht.
 
 > Die BPN muss **überall exakt gleich** sein (Zentrale, `participant.id` des Connectors,
 > Katalog-Aufruf). Sonst: `Empty optional`.
@@ -258,6 +263,7 @@ curl -s -X POST http://localhost:8081/management/v3/catalog/request \
 | `did.json` → `204` | Participant Context fehlt (Schritt 4), **kein** Ingress-Problem |
 | `helm` → `failed to create typed patch object` | `--server-side=false` vergessen (Schritt 5) |
 | `401 invalid_client` bei `/api/sts/token` | STS-Konto fehlt oder Tresor ist leer |
+| `401` beim Katalogabruf | Dem Teilnehmer fehlt `BpnCredential` oder `DataExchangeGovernanceCredential` — alle drei ausstellen, nicht nur die Mitgliedschaft |
 | `Empty optional` | BPN stimmt an einer der drei Stellen nicht überein |
 | Dataplane startet nicht | Bei der Wind-X-Dataplane fehlt `TX_EDC_WINDX_MEDIATOR_BASE_URL` |
 

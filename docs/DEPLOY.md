@@ -126,9 +126,10 @@ kubectl -n windx-dave create secret docker-registry ghcr-windx \
   --docker-server=ghcr.io --docker-username=<gh-user> --docker-password=<PAT read:packages>
 ```
 
-> In `conn-full-dave.yaml` steht als Tag `latest`; **live läuft `windx-on-tractusx-0.12.1`**.
-> Vor einem `helm upgrade` den Tag in der Datei auf den gewünschten Stand setzen, sonst
-> schwenkt das Deployment unbeabsichtigt auf `latest`.
+> Der Tag ist in `conn-full-dave.yaml` bewusst **festgeschrieben** (`windx-on-tractusx-0.12.1`),
+> nicht `latest`. Das Dataplane-Image muss zur Control-Plane-Version passen: ein gegen `main`
+> gebautes Image (0.13.0-SNAPSHOT / EDC 0.17) lässt neben einer 0.12.1-Control-Plane **jeden**
+> Transfer fehlschlagen.
 
 ## Geheimnisse, die du erzeugen musst
 
@@ -167,6 +168,9 @@ Connector (`conn-full-<p>.yaml`) → controlplane/dataplane deployment env:
 - `iatp.sts.oauth.client.id` → `EDC_IAM_STS_OAUTH_CLIENT_ID`
 - `iatp.sts.oauth.client.secret_alias` → `EDC_IAM_STS_OAUTH_CLIENT_SECRET_ALIAS` = **`<did>-sts-client-secret`** ← same alias the IH writes
 - `iatp.trustedIssuers[0]` → `EDC_IAM_TRUSTED-ISSUER_0-ISSUER_ID` / `_SUPPORTEDTYPES`
+  — `supportedTypes` muss **alle drei** Typen nennen (`MembershipCredential`, `BpnCredential`,
+  `DataExchangeGovernanceCredential`). DSP 2025-1 fordert sie gemeinsam an; fehlt einem
+  Teilnehmer auch nur eines, antwortet die Gegenseite beim Katalogabruf mit `401`.
 - `controlplane.bdrs.server.url` → `TX_EDC_IAM_IATP_BDRS_SERVER_URL` = `https://auth-windx.cluster.swms-cloud.com/api/directory`
 - `dataplane.token.signer.privatekey_alias` → `EDC_TRANSFER_PROXY_TOKEN_SIGNER_PRIVATEKEY_ALIAS` = `<did>#signing-key-1`
 - `dataplane.token.verifier.publickey_alias` → `EDC_TRANSFER_PROXY_TOKEN_VERIFIER_PUBLICKEY_ALIAS` = `<did>#signing-key-1`

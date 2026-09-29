@@ -34,7 +34,11 @@ iatp:
   trustedIssuers:
     - id: "did:web:auth-windx.cluster.swms-cloud.com"
       supportedTypes:
+        # Alle drei Typen sind Pflicht: der Connector fordert sie bei der
+        # Praesentation an, und die Gegenseite lehnt mit 401 ab, wenn eines fehlt.
         - "MembershipCredential"
+        - "BpnCredential"
+        - "DataExchangeGovernanceCredential"
   sts:
     oauth:
       # -- In-cluster IdentityHub STS token endpoint (Service alice-ih, sts port 8087)

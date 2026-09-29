@@ -348,7 +348,10 @@ Im Admin-UI (`https://auth-windx.cluster.swms-cloud.com`) je einen Participant a
 
 ### Schritt 8 — Credentials ausstellen
 
-Im Admin-UI beim Teilnehmer **„Issue Membership Credential"**. Kontrolle im IH-Log:
+Im Admin-UI beim Teilnehmer **alle drei Credentials** ausstellen — `MembershipCredential`,
+`BpnCredential` und `DataExchangeGovernanceCredential`. Nur die Mitgliedschaft auszustellen
+genügt nicht: Der Teilnehmer gilt dann als onboardet, scheitert aber bei jedem Katalogabruf
+mit `401`. Kontrolle im IH-Log:
 `HolderCredentialRequest … is now in state ISSUED`.
 
 ### Schritt 9 — Anbieter einrichten und testen
@@ -368,6 +371,7 @@ Die konkreten Aufrufe stehen in `DEPLOY.md`.
 | `did.json` liefert `204` | Kein Ingress-Problem — der IdentityHub hat keinen Participant Context mehr. Siehe [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md) |
 | `HTTP client exception … /api/sts/token` | Ist ein `401 invalid_client`: STS-Account fehlt. Gleiche Ursache wie oben |
 | Controlplane-Log voll mit `error caught during processor` | Reine Folgewirkung — nie die Ursache. Prüfkette in [Vorfall 23.08.2026](vorfall-2026-08-23-identitaetsverlust.md) Abschnitt 4 abarbeiten |
+| `401` beim Katalogabruf eines Teilnehmers | Dem Teilnehmer fehlt eines der **drei** Credentials. Im Log der Zentrale nach `DCP delivered … type=` je Typ suchen — nur `MembershipCredential` reicht nicht |
 | `Empty optional` | BPN stimmt nicht überein (Zentrale ⇄ Connector ⇄ Aufruf) |
 | Connector-Fehler ohne Details | Log4j2-Template des Connectors zeigt standardmäßig **keine** Stacktraces — im ConfigMap `…-log4j2` einen `exception`-Resolver ergänzen |
 | Katalog `500` bei der Gegenseite | Meist die Credential-Prüfung; Stacktrace im Controlplane-Log der Gegenseite |

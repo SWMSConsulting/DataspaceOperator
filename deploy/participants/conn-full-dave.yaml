@@ -35,7 +35,11 @@ iatp:
   trustedIssuers:
     - id: "did:web:auth-windx.cluster.swms-cloud.com"
       supportedTypes:
+        # Alle drei Typen sind Pflicht: der Connector fordert sie bei der
+        # Praesentation an, und die Gegenseite lehnt mit 401 ab, wenn eines fehlt.
         - "MembershipCredential"
+        - "BpnCredential"
+        - "DataExchangeGovernanceCredential"
   sts:
     oauth:
       token_url: "http://dave-ih:8087/api/sts/token"
@@ -72,7 +76,10 @@ dataplane:
   # ---- Wind-X custom data-plane image ----
   image:
     repository: "ghcr.io/wind-x-eu/edc-dataplane-windx"
-    tag: "latest"
+    # Fester Tag, kein "latest": das Image muss zur Control-Plane 0.12.1 passen.
+    # Ein gegen main gebautes Image (0.13.0-SNAPSHOT / EDC 0.17) laesst jeden
+    # Transfer fehlschlagen -- siehe docs/windx/rebase-tractusx-0.12.1.md im Fork.
+    tag: "windx-on-tractusx-0.12.1"
     pullPolicy: Always
   # ---- Config required by the Wind-X extensions baked into the image ----
   # windx-mediator-proxy REQUIRES this (no default) or the runtime aborts at boot.
