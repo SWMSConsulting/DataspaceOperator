@@ -48,7 +48,8 @@ public static class ProtocolEndpoints
     private static void MapBdrsDirectory(IEndpointRouteBuilder app)
     {
         app.MapGet("/api/directory/bpn-directory", async (
-            HttpContext ctx, VpVerifier verifier, BdrsDirectoryService bdrs, ILoggerFactory lf, CancellationToken ct) =>
+            HttpContext ctx, VpVerifier verifier, BdrsDirectoryService bdrs, IParticipantStore participants,
+            ILoggerFactory lf, CancellationToken ct) =>
         {
             var log = lf.CreateLogger("Bdrs");
             var auth = ctx.Request.Headers.Authorization.ToString();
@@ -69,6 +70,17 @@ public static class ProtocolEndpoints
 
             foreach (var w in verification.Warnings)
                 log.LogWarning("BDRS read: spec deviation tolerated - {Warning}", w);
+
+            // A credential stays cryptographically valid until it expires, so the signature alone
+            // cannot tell us whether the holder is STILL a participant. Without this check a deleted
+            // participant keeps reading the full directory for the lifetime of their credential.
+            if (await participants.GetByDidAsync(verification.HolderDid!, ct) is null)
+            {
+                log.LogWarning("BDRS read rejected: '{Holder}' is not a participant (removed?)",
+                    verification.HolderDid);
+                ctx.Items[AuditMiddleware.DetailKey] = "rejected: not a participant";
+                return Results.Json(new { error = "not a participant" }, statusCode: StatusCodes.Status401Unauthorized);
+            }
 
             var map = await bdrs.GetDirectoryAsync(ct);
             log.LogInformation("BDRS read authorized for holder {Holder}; directory: {Map}",

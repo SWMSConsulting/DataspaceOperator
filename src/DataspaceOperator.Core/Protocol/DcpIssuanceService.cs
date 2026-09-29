@@ -153,6 +153,28 @@ public sealed class DcpIssuanceService(
         await credentials.SetLifecycleAsync(credentialId, CredentialLifecycle.Revoked, ct);
     }
 
+    /// <summary>
+    /// Revoke every credential still live for a holder, and report how many were flipped.
+    ///
+    /// This is what actually removes a participant from the dataspace. Deleting their record only
+    /// takes them out of the BDRS directory and stops further issuance; their existing credentials
+    /// stay cryptographically valid and other connectors keep honouring them until they expire.
+    /// Only the status list reaches those connectors.
+    /// </summary>
+    public async Task<int> RevokeAllForHolderAsync(string holderDid, CancellationToken ct = default)
+    {
+        var list = await credentials.ListByHolderAsync(holderDid, ct);
+        var revoked = 0;
+        foreach (var cred in list)
+        {
+            if (cred.Lifecycle == CredentialLifecycle.Revoked) continue;
+            await statusList.RevokeAsync(cred.StatusListIndex, ct);
+            await credentials.SetLifecycleAsync(cred.Id, CredentialLifecycle.Revoked, ct);
+            revoked++;
+        }
+        return revoked;
+    }
+
     // --- template rendering ---
 
     private static JsonObject BuildClaimsFromTemplate(string templateJson, Participant p)

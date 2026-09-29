@@ -28,6 +28,14 @@ issuer:
   existingSecret: ""            # secret name
   existingSecretSeedKey: "issuer-seed"
 
+  # Embed a credentialStatus into every issued credential. This is what makes revocation work:
+  # without it a credential stays valid everywhere until it expires, and deleting a participant
+  # does NOT end their access at other connectors.
+  # Kept false historically because the status list is fetched by two clients that want different
+  # encodings (IdentityHub: signed JWT, EDC: JSON-LD). The status-list endpoint now negotiates on
+  # the Accept header; verify against both clients before switching this on in production.
+  includeCredentialStatus: false
+
   # Reject presentations whose signing key is not declared under the DID verification relationship
   # DCP requires. Leave false until the participants' IdentityHubs publish non-empty
   # `authentication` arrays -- otherwise every participant is locked out at once.
