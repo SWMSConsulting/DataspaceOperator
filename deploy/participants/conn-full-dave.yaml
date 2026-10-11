@@ -79,7 +79,8 @@ dataplane:
     # Fester Tag, kein "latest": das Image muss zur Control-Plane 0.12.1 passen.
     # Ein gegen main gebautes Image (0.13.0-SNAPSHOT / EDC 0.17) laesst jeden
     # Transfer fehlschlagen -- siehe docs/windx/rebase-tractusx-0.12.1.md im Fork.
-    tag: "windx-on-tractusx-0.12.1"
+    # feat-windx-tcp-tunnel-0.12.1 = windx-on-tractusx-0.12.1 + windx-tcp-tunnel (TcpTunnel-PULL).
+    tag: "feat-windx-tcp-tunnel-0.12.1"
     pullPolicy: Always
   # ---- Config required by the Wind-X extensions baked into the image ----
   # windx-mediator-proxy REQUIRES this (no default) or the runtime aborts at boot.
@@ -87,6 +88,11 @@ dataplane:
   # data-plane boot and serve standard (non-mediator) transfers meanwhile.
   env:
     TX_EDC_WINDX_MEDIATOR_BASE_URL: "http://semanticmediator:3051"
+    # windx-tcp-tunnel: eigener Web-Kontext, extern ueber tunnel-dave.yaml (Service + Ingress)
+    # erreichbar. Der Endpoint landet im EDR, daher die oeffentliche wss-URL.
+    WEB_HTTP_TUNNEL_PORT: "8088"
+    WEB_HTTP_TUNNEL_PATH: "/api/tunnel"
+    EDC_DATAPLANE_WINDX_TUNNEL_ENDPOINT: "wss://dave-edc-windx.cluster.swms-cloud.com/api/tunnel"
   token:
     signer:
       privatekey_alias: "did:web:dave-windx.cluster.swms-cloud.com#signing-key-1"

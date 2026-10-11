@@ -1,0 +1,60 @@
+# Test-Ziel fuer den Wind-X TCP-Tunnel: OPC-UA-Server (Microsoft OPC PLC Simulator)
+# in windx-dave. Nur clusterintern erreichbar -- von aussen ausschliesslich ueber den
+# Tunnel (Asset type TcpTunnel, host dave-opcua, port 50000).
+#
+# --ut erlaubt SecurityPolicy None (nur fuer den Test; der Tunnel selbst ist per wss
+# verschluesselt). --ph setzt den Hostnamen in den Endpoint-URLs, die der Server bei
+# GetEndpoints meldet -- der Client muss diese URL durch seine lokale Tunnel-Adresse ersetzen.
+#
+#   kubectl apply -n windx-dave -f tunnel-target-opcua-dave.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dave-opcua
+  labels:
+    app: dave-opcua
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dave-opcua
+  template:
+    metadata:
+      labels:
+        app: dave-opcua
+    spec:
+      containers:
+        - name: opc-plc
+          image: mcr.microsoft.com/iotedge/opc-plc:2.15.10
+          args:
+            - "--pn=50000"
+            - "--ph=dave-opcua"
+            - "--autoaccept"
+            - "--ut"
+            - "--sn=5"
+            - "--sr=10"
+            - "--st=uint"
+            - "--fn=5"
+            - "--fr=1"
+            - "--ft=uint"
+          ports:
+            - containerPort: 50000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dave-opcua
+spec:
+  selector:
+    app: dave-opcua
+  ports:
+    - name: opcua
+      port: 50000
+      targetPort: 50000

@@ -1,0 +1,59 @@
+# Wind-X TCP-Tunnel (windx-tcp-tunnel) fuer Dave: macht den Tunnel-Kontext der
+# Data-Plane (Port 8088, /api/tunnel) unter dem bestehenden Connector-Host erreichbar.
+#
+# Das tractusx-connector-Chart kennt den Port nicht, daher eigener Service +
+# eigener Ingress. Der Ingress nutzt denselben Host und dasselbe TLS-Secret wie
+# die Public-API (dave-edc-tls); nginx fuehrt beide Ingress-Objekte zusammen.
+#
+# Voraussetzung: Data-Plane-Image mit windx-tcp-tunnel und die Env
+# WEB_HTTP_TUNNEL_* / EDC_DATAPLANE_WINDX_TUNNEL_ENDPOINT (conn-full-dave.yaml).
+#
+#   kubectl apply -n windx-dave -f tunnel-dave.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dave-edc-dataplane-tunnel
+  labels:
+    app.kubernetes.io/part-of: edc
+    app.kubernetes.io/component: edc-dataplane-tunnel
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: dave-edc-dataplane
+    app.kubernetes.io/name: tractusx-connector-dataplane
+  ports:
+    - name: tunnel
+      port: 8088
+      targetPort: 8088
+      protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dave-edc-dataplane-tunnel
+  labels:
+    app.kubernetes.io/part-of: edc
+    app.kubernetes.io/component: edc-dataplane-tunnel
+  annotations:
+    # WebSocket-Verbindungen sind langlebig; der nginx-Default von 60 s trennt ruhige Tunnel.
+    # Die Data-Plane sendet zusaetzlich alle 30 s einen Ping.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dave-edc-windx.cluster.swms-cloud.com
+      secretName: dave-edc-tls
+  rules:
+    - host: dave-edc-windx.cluster.swms-cloud.com
+      http:
+        paths:
+          - path: /api/tunnel
+            pathType: Prefix
+            backend:
+              service:
+                name: dave-edc-dataplane-tunnel
+                port:
+                  number: 8088

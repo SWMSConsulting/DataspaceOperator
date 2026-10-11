@@ -1,0 +1,64 @@
+# Test-Ziel fuer den Wind-X TCP-Tunnel: MQTT-Broker (Mosquitto) in windx-dave.
+# Nur clusterintern erreichbar -- von aussen ausschliesslich ueber den Tunnel
+# (Asset type TcpTunnel, host dave-mqtt, port 1883).
+#
+#   kubectl apply -n windx-dave -f tunnel-target-mqtt-dave.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dave-mqtt-config
+data:
+  mosquitto.conf: |
+    listener 1883
+    allow_anonymous true
+    persistence false
+    log_dest stdout
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dave-mqtt
+  labels:
+    app: dave-mqtt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dave-mqtt
+  template:
+    metadata:
+      labels:
+        app: dave-mqtt
+    spec:
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2.0.20
+          ports:
+            - containerPort: 1883
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config/mosquitto.conf
+              subPath: mosquitto.conf
+      volumes:
+        - name: config
+          configMap:
+            name: dave-mqtt-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dave-mqtt
+spec:
+  selector:
+    app: dave-mqtt
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: 1883
